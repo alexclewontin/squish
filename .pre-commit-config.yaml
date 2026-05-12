@@ -1,10 +1,25 @@
 repos:
-  - repo: https://github.com/compilerla/conventional-pre-commit
-    rev: v3.4.0
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
     hooks:
-      - id: conventional-pre-commit
+      - id: no-commit-to-branch
+        args: [--branch, main]
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb, "512"]
+      - id: check-case-conflict
+      - id: check-yaml
+      - id: check-toml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+
+  - repo: local
+    hooks:
+      - id: conventional-commit
+        name: "conventional commit: type(scope): message"
+        language: system
         stages: [commit-msg]
-        args: [feat, fix, docs, style, refactor, test, chore, ci, perf, revert, build]
+        entry: python3 tools/check-commit-msg.py
 
   - repo: local
     hooks:
