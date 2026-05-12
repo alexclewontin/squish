@@ -174,15 +174,16 @@ async fn install_key_via_ssh(config: &ClientConfig) -> Result<()> {
 
     let userhost = format!("{}@{}", config.username, config.host);
     // Append the key only if it isn't already present; then lock down perms.
+    // Writes to the user's own home — no sudo needed.
     let remote_cmd = format!(
-        "sudo sh -c 'mkdir -p /etc/qssh && chmod 755 /etc/qssh && \
-         grep -qF \"{ak_line}\" /etc/qssh/authorized_keys 2>/dev/null || \
-         {{ echo \"{ak_line}\" >> /etc/qssh/authorized_keys && \
-            chmod 600 /etc/qssh/authorized_keys; }}'"
+        "sh -c 'mkdir -p \"$HOME/.squish\" && chmod 700 \"$HOME/.squish\" && \
+         grep -qF \"{ak_line}\" \"$HOME/.squish/authorized_keys\" 2>/dev/null || \
+         {{ echo \"{ak_line}\" >> \"$HOME/.squish/authorized_keys\" && \
+            chmod 600 \"$HOME/.squish/authorized_keys\"; }}'"
     );
 
     let status = tokio::process::Command::new("ssh")
-        .args(["-t", "-p", "22", &userhost, &remote_cmd])
+        .args(["-p", "22", &userhost, &remote_cmd])
         .status()
         .await
         .context("spawning ssh for key installation")?;

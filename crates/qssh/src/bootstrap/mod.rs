@@ -5,7 +5,7 @@ pub mod ssh;
 
 use std::path::PathBuf;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 
 use self::detect::OsKind;
 use self::service::QSSHD_INSTALL_PATH;
@@ -13,7 +13,6 @@ use self::ssh::SshRunner;
 
 const GITHUB_REPO: &str = "alexclewontin/squish";
 const QSSHD_CONFIG_PATH: &str = "/etc/qssh/qsshd.toml";
-const QSSHD_AUTH_KEYS_PATH: &str = "/etc/qssh/authorized_keys";
 
 pub struct BootstrapConfig {
     /// Remote host to bootstrap.
@@ -61,6 +60,12 @@ pub fn run(cfg: &BootstrapConfig) -> Result<()> {
     let installed = detect::is_qsshd_installed(&runner).context("checking qsshd install status")?;
 
     if !installed {
+        // The version flows into a shell command on the remote host; reject
+        // anything that isn't a plain semver-ish token so we can't be a
+        // shell-injection vector.
+        if let Some(v) = cfg.squishd_version.as_deref() {
+            validate_version(v)?;
+        }
         let url = release_asset_url(cfg.squishd_version.as_deref(), target);
         eprintln!("[bootstrap] downloading qsshd from {url}…");
         let fetch = fetch_command(os, &url);
@@ -91,17 +96,19 @@ pub fn run(cfg: &BootstrapConfig) -> Result<()> {
         ))
         .context("installing qsshd.toml")?;
 
-    // 4. Add client public key to authorized_keys (append if not already present).
-    eprintln!("[bootstrap] configuring authorized_keys…");
+    // 4. Add client public key to the SSH user's ~/.squish/authorized_keys.
+    //    No sudo needed — the SSH connection is already authenticated as the
+    //    user, and the file lives in their own home directory.
+    eprintln!("[bootstrap] configuring ~/.squish/authorized_keys…");
     let pubkey =
         keys::ensure_client_keypair(&cfg.identity_path).context("ensuring client key pair")?;
     let ak_line = keys::format_authorized_key(&pubkey, "");
     runner
-        .sudo(&format!(
-            "sh -c 'mkdir -p /etc/qssh && chmod 755 /etc/qssh && \
-             grep -qF \"{ak_line}\" {QSSHD_AUTH_KEYS_PATH} 2>/dev/null || \
-             {{ echo \"{ak_line}\" >> {QSSHD_AUTH_KEYS_PATH} && \
-                chmod 600 {QSSHD_AUTH_KEYS_PATH}; }}'"
+        .run(&format!(
+            "sh -c 'mkdir -p \"$HOME/.squish\" && chmod 700 \"$HOME/.squish\" && \
+             grep -qF \"{ak_line}\" \"$HOME/.squish/authorized_keys\" 2>/dev/null || \
+             {{ echo \"{ak_line}\" >> \"$HOME/.squish/authorized_keys\" && \
+                chmod 600 \"$HOME/.squish/authorized_keys\"; }}'"
         ))
         .context("installing authorized_keys")?;
 
@@ -134,6 +141,25 @@ pub fn run(cfg: &BootstrapConfig) -> Result<()> {
     Ok(())
 }
 
+/// Reject version strings that contain anything outside `[0-9A-Za-z.+-]`. The
+/// value is interpolated into a remote shell command and must not be able to
+/// terminate a URL or introduce metacharacters.
+fn validate_version(v: &str) -> Result<()> {
+    if v.is_empty() {
+        bail!("version string is empty");
+    }
+    if !v.starts_with(|c: char| c.is_ascii_digit()) {
+        bail!("version '{v}' must start with a digit");
+    }
+    if !v
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '+' | '-'))
+    {
+        bail!("version '{v}' contains disallowed characters (only [0-9A-Za-z.+-] allowed)");
+    }
+    Ok(())
+}
+
 /// Construct the GitHub Releases download URL for the squish tarball.
 fn release_asset_url(version: Option<&str>, target: &str) -> String {
     let asset = format!("squish-{target}.tar.gz");
@@ -157,7 +183,6 @@ fn build_server_config(port: u16) -> String {
 port = {port}
 host_key = "/etc/qssh/host.key"
 host_cert = "/etc/qssh/host.cert"
-authorized_keys = "{QSSHD_AUTH_KEYS_PATH}"
 "#
     )
 }
@@ -169,5 +194,34 @@ fn reload_service(runner: &SshRunner, os: OsKind) -> Result<()> {
             "launchctl unload /Library/LaunchDaemons/com.qssh.qsshd.plist 2>/dev/null; \
                  launchctl load -w /Library/LaunchDaemons/com.qssh.qsshd.plist",
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validate_version_accepts_semver() {
+        validate_version("0.1.0").unwrap();
+        validate_version("1.2.3").unwrap();
+        validate_version("1.2.3-beta.1").unwrap();
+        validate_version("0.1.0+build42").unwrap();
+    }
+
+    #[test]
+    fn validate_version_rejects_shell_metacharacters() {
+        for bad in [
+            "",
+            "0.1.0; rm -rf /",
+            "0.1.0 | sh",
+            "0.1.0`whoami`",
+            "0.1.0$(whoami)",
+            "0.1.0/../etc/passwd",
+            "0.1.0 ",
+            "v0.1.0", // must start with digit
+        ] {
+            assert!(validate_version(bad).is_err(), "should reject: {bad:?}");
+        }
     }
 }

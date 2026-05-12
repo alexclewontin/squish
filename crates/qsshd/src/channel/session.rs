@@ -3,7 +3,7 @@ use std::os::unix::process::CommandExt;
 use std::process::Stdio;
 use std::sync::Arc;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use nix::fcntl::{FcntlArg, OFlag};
 use nix::pty::{Winsize, openpty};
 use nix::sys::signal::{self, Signal};
@@ -27,6 +27,13 @@ pub async fn handle(
     username: &str,
     _config: &Arc<ServerConfig>,
 ) -> Result<()> {
+    // Re-validate the user exists. authenticate() already checked this; we
+    // re-check here to bind to the user's identity for the privilege drop
+    // and to fail cleanly if the user was removed in between.
+    let user = User::from_name(username)
+        .with_context(|| format!("looking up user '{username}'"))?
+        .with_context(|| format!("user '{username}' no longer exists"))?;
+
     // Handle requests: accumulate pty-req, then launch on shell/exec.
     let mut pty_params: Option<PtyReqParams> = None;
 
@@ -52,12 +59,11 @@ pub async fn handle(
                 request_type: RequestType::Shell,
                 want_reply,
             } => {
-                let shell = lookup_shell(username);
-                tracing::info!(%username, %shell, "shell request");
+                tracing::info!(%username, shell = %user.shell.display(), "shell request");
                 if want_reply {
                     stream.sender.send(&ChannelMessage::RequestSuccess).await?;
                 }
-                return run_child(stream, username, &shell, &[], pty_params.take()).await;
+                return run_child(stream, &user, None, pty_params.take()).await;
             }
             ChannelMessage::Request {
                 request_type: RequestType::Exec { command },
@@ -67,15 +73,7 @@ pub async fn handle(
                 if want_reply {
                     stream.sender.send(&ChannelMessage::RequestSuccess).await?;
                 }
-                let shell = lookup_shell(username);
-                return run_child(
-                    stream,
-                    username,
-                    &shell,
-                    &["-c", &command],
-                    pty_params.take(),
-                )
-                .await;
+                return run_child(stream, &user, Some(&command), pty_params.take()).await;
             }
             ChannelMessage::Request {
                 request_type: RequestType::WindowChange(_),
@@ -112,9 +110,8 @@ pub async fn handle(
 
 async fn run_child(
     stream: &mut FramedBiStream,
-    username: &str,
-    shell: &str,
-    args: &[&str],
+    user: &User,
+    exec: Option<&str>,
     pty_params: Option<PtyReqParams>,
 ) -> Result<()> {
     // Allocate PTY if requested.
@@ -139,28 +136,85 @@ async fn run_child(
         .map(|p| p.term.clone())
         .unwrap_or_else(|| "xterm".to_string());
 
+    // Decide whether we need to switch users. If qsshd's euid already matches
+    // the target user, no privilege drop is needed (common in dev). If they
+    // differ, we must be root to switch — refuse cleanly otherwise.
+    let effective_uid = nix::unistd::geteuid();
+    let needs_drop = effective_uid != user.uid;
+    if needs_drop && !effective_uid.is_root() {
+        bail!(
+            "cannot run shell as '{}': qsshd must be root to switch users (current euid: {})",
+            user.name,
+            effective_uid
+        );
+    }
+
     // Build the child command.
     let slave_raw_fd = slave_fd.as_raw_fd();
-    let mut cmd = std::process::Command::new(shell);
-    cmd.args(args);
+    let shell_path = user.shell.clone();
+    let shell_basename = shell_path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("sh")
+        .to_string();
+
+    let mut cmd = std::process::Command::new(&shell_path);
+    match exec {
+        Some(command) => {
+            cmd.args(["-c", command]);
+        }
+        None => {
+            // Interactive login shell: argv[0] = "-<basename>" by convention so
+            // the shell sources the appropriate login profile.
+            cmd.arg0(format!("-{shell_basename}"));
+        }
+    }
     cmd.env("TERM", &term);
-    cmd.env("USER", username);
-    cmd.env("LOGNAME", username);
+    cmd.env("USER", &user.name);
+    cmd.env("LOGNAME", &user.name);
+    cmd.env("HOME", &user.dir);
+    cmd.env("SHELL", &shell_path);
+    cmd.env("PATH", "/usr/local/bin:/usr/bin:/bin");
+    cmd.current_dir(&user.dir);
 
     // Use the slave fd as stdin/stdout/stderr.
     cmd.stdin(fd_to_stdio(&slave_fd)?);
     cmd.stdout(fd_to_stdio(&slave_fd)?);
     cmd.stderr(fd_to_stdio(&slave_fd)?);
 
-    // Pre-exec: create a new session and set the controlling terminal.
-    // SAFETY: pre_exec runs in the child after fork() but before exec().
-    // At that point we are single-threaded and only async-signal-safe calls
-    // are permitted. setsid(2) and ioctl(2) both qualify. The slave_raw_fd
-    // captured here is valid: slave_fd is still open in the parent and the
-    // child inherits it across fork. There is no safe Rust wrapper for the
-    // post-fork window, so this block is inherently required.
+    // Capture state needed inside pre_exec. Allocation in pre_exec is unsafe
+    // (post-fork in a multi-threaded program), so prepare the CString here.
+    let username_c =
+        std::ffi::CString::new(user.name.as_str()).context("username contains null byte")?;
+    let target_uid = user.uid;
+    let target_gid = user.gid;
+
+    // SAFETY: pre_exec runs in the child after fork() but before exec(). Only
+    // async-signal-safe calls are strictly permitted; we accept the standard
+    // risk of `initgroups` (which may allocate) because it mirrors OpenSSH's
+    // approach and avoids the more complex pre-fork getgrouplist path.
+    //
+    // Order matters: initgroups + setgid require root, so they run BEFORE
+    // setuid drops to the unprivileged user. setsid + TIOCSCTTY happen last,
+    // after the privilege drop, since they don't require root.
+    //
+    // We deliberately do NOT use Command::uid/gid — Rust does not document
+    // their order relative to pre_exec, and we need initgroups to land in a
+    // specific spot in the sequence.
     unsafe {
         cmd.pre_exec(move || {
+            if needs_drop {
+                // initgroups(3) — nix doesn't expose this on Apple targets,
+                // so call libc directly. The arg type for the second arg
+                // differs across platforms (gid_t on Linux, int on macOS);
+                // `as _` lets the compiler choose.
+                let ret = libc::initgroups(username_c.as_ptr(), target_gid.as_raw() as _);
+                if ret < 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                nix::unistd::setgid(target_gid).map_err(std::io::Error::from)?;
+                nix::unistd::setuid(target_uid).map_err(std::io::Error::from)?;
+            }
             // Create a new session (detach from parent's controlling terminal).
             if libc::setsid() < 0 {
                 return Err(std::io::Error::last_os_error());
@@ -208,7 +262,7 @@ async fn run_child(
         .ok();
     stream.sender.send(&ChannelMessage::Close).await.ok();
 
-    tracing::info!(%username, exit_status, "session ended");
+    tracing::info!(username = %user.name, exit_status, "session ended");
     Ok(())
 }
 
@@ -368,32 +422,6 @@ async fn write_all_to_fd(fd: &AsyncFd<OwnedFd>, mut buf: &[u8]) -> Result<()> {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/// Look up the user's login shell. Check $SHELL first (useful in dev),
-/// then fall back to /etc/passwd, then /bin/sh.
-fn lookup_shell(username: &str) -> String {
-    // 1. $SHELL env var (common on macOS and development setups)
-    if let Ok(shell) = std::env::var("SHELL")
-        && !shell.is_empty()
-    {
-        return shell;
-    }
-
-    // 2. /etc/passwd lookup
-    let shell = lookup_shell_passwd(username);
-    if let Some(s) = shell {
-        return s;
-    }
-
-    // 3. Fallback
-    "/bin/sh".to_string()
-}
-
-fn lookup_shell_passwd(username: &str) -> Option<String> {
-    let user = User::from_name(username).ok()??;
-    let s = user.shell.to_str()?.to_string();
-    if s.is_empty() { None } else { Some(s) }
-}
 
 fn set_nonblocking(fd: &OwnedFd) -> Result<()> {
     let flags = nix::fcntl::fcntl(fd, FcntlArg::F_GETFL).context("fcntl F_GETFL")?;

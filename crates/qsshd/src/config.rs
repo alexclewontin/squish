@@ -14,9 +14,6 @@ pub struct ServerConfig {
     pub host_key: PathBuf,
     pub host_cert: PathBuf,
 
-    /// Directory or file containing authorized public keys.
-    pub authorized_keys: PathBuf,
-
     #[serde(default = "default_max_connections")]
     pub max_connections: usize,
 

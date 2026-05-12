@@ -12,7 +12,6 @@ pub fn default_config() -> String {
 port = 2222
 host_key = "/etc/qssh/host.key"
 host_cert = "/etc/qssh/host.cert"
-authorized_keys = "/etc/qssh/authorized_keys"
 "#
     .to_string()
 }

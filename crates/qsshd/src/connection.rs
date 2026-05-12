@@ -4,6 +4,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, bail};
 use ml_dsa::{EncodedVerifyingKey, MlDsa65, Signature, VerifyingKey};
+use nix::unistd::{Uid, User};
 use qssh_core::auth::challenge::build_challenge_payload;
 use qssh_core::auth::keys::parse_authorized_keys;
 use qssh_core::proto::channel::*;
@@ -162,10 +163,17 @@ async fn authenticate(
         _ => bail!("expected ClientHello, got {hello:?}"),
     };
 
-    // 2. Load authorized keys for this user
-    let ak_contents = std::fs::read_to_string(&config.authorized_keys)
-        .with_context(|| "reading authorized_keys")?;
-    let authorized = parse_authorized_keys(&ak_contents);
+    // 2. Look up the user. Loading their authorized keys is the authorization
+    //    boundary: a pubkey is only valid for the user in whose file it sits.
+    //    A missing user is handled like an empty key list so we still send a
+    //    challenge before the AuthFailure response (avoids a trivial enumeration
+    //    oracle on AuthChallenge vs immediate Disconnect).
+    let user =
+        User::from_name(&username).with_context(|| format!("looking up user '{username}'"))?;
+    let authorized = match &user {
+        Some(u) => load_user_authorized_keys(u)?,
+        None => Vec::new(),
+    };
 
     // 3. Send challenge
     let mut nonce = [0u8; 32];
@@ -184,13 +192,13 @@ async fn authenticate(
     };
 
     // 5. Verify
-    // Check the public key is in authorized_keys
-    if !authorized.iter().any(|k| k == &pubkey_bytes) {
+    // Check the public key is in this user's authorized keys.
+    if user.is_none() || !authorized.iter().any(|k| k == &pubkey_bytes) {
         let _ = control
             .sender
             .send(&ControlMessage::AuthResult(AuthOutcome::Failure))
             .await;
-        bail!("public key not in authorized_keys");
+        bail!("auth failed for user '{username}'");
     }
 
     let cert_fingerprint = {
@@ -232,4 +240,39 @@ async fn authenticate(
         .await?;
 
     Ok(username)
+}
+
+/// Load `<user.dir>/.squish/authorized_keys` after verifying the file is owned
+/// by the user (or root) and not group/world-writable. A missing file is not
+/// an error — the user simply has no keys configured.
+fn load_user_authorized_keys(user: &User) -> Result<Vec<Vec<u8>>> {
+    use std::os::unix::fs::MetadataExt;
+
+    let path = user.dir.join(".squish").join("authorized_keys");
+    let meta = match std::fs::metadata(&path) {
+        Ok(m) => m,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(e).with_context(|| format!("stat {}", path.display())),
+    };
+
+    let owner = Uid::from_raw(meta.uid());
+    if owner != user.uid && !owner.is_root() {
+        bail!(
+            "{} is owned by uid {} (expected {} or root); refusing to use",
+            path.display(),
+            owner,
+            user.uid
+        );
+    }
+    if meta.mode() & 0o022 != 0 {
+        bail!(
+            "{} is group/world-writable (mode {:o}); refusing to use",
+            path.display(),
+            meta.mode() & 0o777
+        );
+    }
+
+    let contents =
+        std::fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
+    Ok(parse_authorized_keys(&contents))
 }
