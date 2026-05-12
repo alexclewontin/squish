@@ -1115,7 +1115,7 @@ dependencies = [
 
 [[package]]
 name = "qssh"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "base64",
@@ -1141,7 +1141,7 @@ dependencies = [
 
 [[package]]
 name = "qssh-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "assert_matches",
  "base64",
@@ -1163,7 +1163,7 @@ dependencies = [
 
 [[package]]
 name = "qsshd"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "clap",
