@@ -1,12 +1,13 @@
-use std::os::fd::{AsRawFd, OwnedFd};
+use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::os::unix::process::CommandExt;
 use std::process::Stdio;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
+use nix::fcntl::{FcntlArg, OFlag};
 use nix::pty::{Winsize, openpty};
 use nix::sys::signal::{self, Signal};
-use nix::unistd::Pid;
+use nix::unistd::{Pid, User};
 use qssh_core::proto::channel::*;
 use qssh_core::transport::framing::FramedBiStream;
 use tokio::io::unix::AsyncFd;
@@ -147,17 +148,17 @@ async fn run_child(
     cmd.env("LOGNAME", username);
 
     // Use the slave fd as stdin/stdout/stderr.
-    // SAFETY: slave_fd is a valid OwnedFd; we convert to raw for Stdio.
-    // The child will inherit these fds.
-    cmd.stdin(fd_to_stdio(&slave_fd));
-    cmd.stdout(fd_to_stdio(&slave_fd));
-    cmd.stderr(fd_to_stdio(&slave_fd));
+    cmd.stdin(fd_to_stdio(&slave_fd)?);
+    cmd.stdout(fd_to_stdio(&slave_fd)?);
+    cmd.stderr(fd_to_stdio(&slave_fd)?);
 
     // Pre-exec: create a new session and set the controlling terminal.
     unsafe {
         cmd.pre_exec(move || {
             // Create a new session (detach from parent's controlling terminal).
-            libc::setsid();
+            if libc::setsid() < 0 {
+                return Err(std::io::Error::last_os_error());
+            }
             // Set the slave as the controlling terminal.
             // TIOCSCTTY with arg 0: don't steal if already owned.
             if libc::ioctl(slave_raw_fd, libc::TIOCSCTTY as libc::c_ulong, 0i32) < 0 {
@@ -222,19 +223,8 @@ async fn io_pump(
             readable = async_master.readable() => {
                 let mut guard = readable.context("waiting for pty readable")?;
                 match guard.try_io(|inner| {
-                    let fd = inner.as_raw_fd();
-                    let n = unsafe {
-                        libc::read(
-                            fd,
-                            pty_read_buf.as_mut_ptr() as *mut libc::c_void,
-                            pty_read_buf.len(),
-                        )
-                    };
-                    if n < 0 {
-                        Err(std::io::Error::last_os_error())
-                    } else {
-                        Ok(n as usize)
-                    }
+                    nix::unistd::read(inner.as_raw_fd(), &mut pty_read_buf)
+                        .map_err(std::io::Error::from)
                 }) {
                     Ok(Ok(0)) => {
                         // EOF on pty — child closed its side.
@@ -352,15 +342,9 @@ async fn io_pump(
 async fn write_all_to_fd(fd: &AsyncFd<OwnedFd>, mut buf: &[u8]) -> Result<()> {
     while !buf.is_empty() {
         let mut guard = fd.writable().await.context("waiting for pty writable")?;
-        match guard.try_io(|inner| {
-            let raw = inner.as_raw_fd();
-            let n = unsafe { libc::write(raw, buf.as_ptr() as *const libc::c_void, buf.len()) };
-            if n < 0 {
-                Err(std::io::Error::last_os_error())
-            } else {
-                Ok(n as usize)
-            }
-        }) {
+        match guard
+            .try_io(|inner| nix::unistd::write(inner.get_ref(), buf).map_err(std::io::Error::from))
+        {
             Ok(Ok(n)) => {
                 buf = &buf[n..];
             }
@@ -385,7 +369,7 @@ fn lookup_shell(username: &str) -> String {
         return shell;
     }
 
-    // 2. /etc/passwd lookup via libc getpwnam
+    // 2. /etc/passwd lookup
     let shell = lookup_shell_passwd(username);
     if let Some(s) = shell {
         return s;
@@ -396,40 +380,24 @@ fn lookup_shell(username: &str) -> String {
 }
 
 fn lookup_shell_passwd(username: &str) -> Option<String> {
-    use std::ffi::CString;
-    let c_user = CString::new(username).ok()?;
-    // SAFETY: getpwnam is safe to call with a valid C string.
-    let pw = unsafe { libc::getpwnam(c_user.as_ptr()) };
-    if pw.is_null() {
-        return None;
-    }
-    let shell = unsafe { std::ffi::CStr::from_ptr((*pw).pw_shell) };
-    let s = shell.to_str().ok()?.to_string();
+    let user = User::from_name(username).ok()??;
+    let s = user.shell.to_str()?.to_string();
     if s.is_empty() { None } else { Some(s) }
 }
 
 fn set_nonblocking(fd: &OwnedFd) -> Result<()> {
-    let raw = fd.as_raw_fd();
-    let flags = unsafe { libc::fcntl(raw, libc::F_GETFL) };
-    if flags < 0 {
-        return Err(std::io::Error::last_os_error()).context("fcntl F_GETFL");
-    }
-    let ret = unsafe { libc::fcntl(raw, libc::F_SETFL, flags | libc::O_NONBLOCK) };
-    if ret < 0 {
-        return Err(std::io::Error::last_os_error()).context("fcntl F_SETFL O_NONBLOCK");
-    }
+    let flags = nix::fcntl::fcntl(fd.as_raw_fd(), FcntlArg::F_GETFL).context("fcntl F_GETFL")?;
+    let mut oflags = OFlag::from_bits_truncate(flags);
+    oflags.insert(OFlag::O_NONBLOCK);
+    nix::fcntl::fcntl(fd.as_raw_fd(), FcntlArg::F_SETFL(oflags))
+        .context("fcntl F_SETFL O_NONBLOCK")?;
     Ok(())
 }
 
-/// Convert an `OwnedFd` into a `Stdio` for use with `Command`.
-fn fd_to_stdio(fd: &OwnedFd) -> Stdio {
-    // We need to dup the fd because Command will take ownership.
-    let raw = fd.as_raw_fd();
-    let duped = unsafe { libc::dup(raw) };
-    assert!(duped >= 0, "dup() failed");
-    // SAFETY: duped is a valid new fd.
-    let owned: OwnedFd = unsafe { std::os::fd::FromRawFd::from_raw_fd(duped) };
-    Stdio::from(owned)
+fn fd_to_stdio(fd: &OwnedFd) -> Result<Stdio> {
+    let raw = nix::unistd::dup(fd.as_raw_fd())?;
+    // Safe: dup() returned a new fd we exclusively own.
+    Ok(Stdio::from(unsafe { OwnedFd::from_raw_fd(raw) }))
 }
 
 fn exit_code_from_status(status: std::process::ExitStatus) -> u32 {
