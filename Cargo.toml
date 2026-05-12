@@ -1,0 +1,56 @@
+[workspace]
+resolver = "2"
+members = ["crates/qssh-core", "crates/qsshd", "crates/qssh"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+authors = ["Alex Lewontin <alex.c.lewontin@gmail.com>"]
+
+[workspace.dependencies]
+# QUIC / TLS
+quinn = "0.11"
+rustls = { version = "0.23", features = ["aws-lc-rs"] }
+# rustls-post-quantum not needed: aws-lc-rs provider includes ML-KEM key exchange
+
+# Post-quantum auth
+ml-dsa = "0.0.4"
+signature = "2"
+
+# Crypto utilities
+sha2 = "0.10"
+rand = "0.8"
+zeroize = { version = "1", features = ["derive"] }
+
+# Encoding
+base64 = "0.22"
+hex = "0.4"
+rustls-pemfile = "2"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+postcard = { version = "1", features = ["alloc"] }
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["codec"] }
+
+# CLI / config
+clap = { version = "4", features = ["derive"] }
+toml = "0.8"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# Testing
+tempfile = "3"
+assert_matches = "1.5"
+
+# Shared internal crate
+qssh-core = { path = "crates/qssh-core" }

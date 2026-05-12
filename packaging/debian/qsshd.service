@@ -1,0 +1,11 @@
+[Unit]
+Description=QSSH daemon
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/qsshd --config /etc/qssh/qsshd.toml
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

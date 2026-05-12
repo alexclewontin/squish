@@ -1,0 +1,84 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            deb: true
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            deb: true
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            deb: false
+          - os: macos-13
+            target: x86_64-apple-darwin
+            deb: false
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Install cmake
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y cmake
+
+      - name: Build
+        run: cargo build --release --workspace
+
+      - name: Archive binaries
+        run: |
+          tar czf squish-${{ matrix.target }}.tar.gz \
+            -C target/release qssh qsshd qssh-bootstrap
+
+      - name: Upload binary archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: squish-${{ matrix.target }}
+          path: squish-${{ matrix.target }}.tar.gz
+
+      - name: Build .deb packages
+        if: matrix.deb
+        run: |
+          cargo install cargo-deb --locked
+          cargo deb -p qssh
+          cargo deb -p qsshd
+
+      - name: Upload .deb packages
+        if: matrix.deb
+        uses: actions/upload-artifact@v4
+        with:
+          name: debs-${{ matrix.target }}
+          path: target/debian/*.deb
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**
+          generate_release_notes: true
