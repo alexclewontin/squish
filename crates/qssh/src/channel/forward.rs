@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use qssh_core::proto::channel::*;
 use qssh_core::transport::framing::FramedBiStream;
 use quinn::Connection;

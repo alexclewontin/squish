@@ -52,10 +52,7 @@ async fn monitor_loop(endpoint: Endpoint) -> anyhow::Result<()> {
             Ok(if_watch::IfEvent::Up(net)) => {
                 let addr = net.addr();
 
-                let endpoint_is_ipv6 = endpoint
-                    .local_addr()
-                    .map(|a| a.is_ipv6())
-                    .unwrap_or(false);
+                let endpoint_is_ipv6 = endpoint.local_addr().map(|a| a.is_ipv6()).unwrap_or(false);
 
                 if should_skip(addr, endpoint_is_ipv6) {
                     tracing::debug!(%net, "ignoring interface (loopback or link-local)");

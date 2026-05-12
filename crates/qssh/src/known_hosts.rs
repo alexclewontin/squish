@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 
 /// Trust-On-First-Use host key verification.
 ///

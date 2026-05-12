@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 
 use super::ssh::SshRunner;
 
@@ -20,7 +20,8 @@ pub fn detect_os(runner: &SshRunner) -> Result<OsKind> {
 
 /// Check whether qsshd is already installed at the expected path.
 pub fn is_qsshd_installed(runner: &SshRunner) -> Result<bool> {
-    let result = runner.run("command -v qsshd || test -f /usr/local/bin/qsshd && echo yes || echo no");
+    let result =
+        runner.run("command -v qsshd || test -f /usr/local/bin/qsshd && echo yes || echo no");
     match result {
         Ok(s) if s.contains("yes") || s.ends_with("qsshd") => Ok(true),
         Ok(_) => Ok(false),

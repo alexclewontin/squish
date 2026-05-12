@@ -61,16 +61,15 @@ async fn setup_quic_pair() -> (
     ));
     client_config.transport_config(Arc::new(client_transport));
 
-    let mut client_endpoint =
-        quinn::Endpoint::client("127.0.0.1:0".parse().unwrap()).unwrap();
+    let mut client_endpoint = quinn::Endpoint::client("127.0.0.1:0".parse().unwrap()).unwrap();
     client_endpoint.set_default_client_config(client_config);
 
     let client_connecting = client_endpoint.connect(server_addr, "localhost").unwrap();
 
-    let (client_conn, server_conn) = tokio::join!(
-        async { client_connecting.await.unwrap() },
-        async { server_endpoint.accept().await.unwrap().await.unwrap() },
-    );
+    let (client_conn, server_conn) =
+        tokio::join!(async { client_connecting.await.unwrap() }, async {
+            server_endpoint.accept().await.unwrap().await.unwrap()
+        },);
 
     (client_conn, server_conn, client_endpoint, server_endpoint)
 }
@@ -132,9 +131,7 @@ async fn control_stream_auth_handshake() {
 
             stream
                 .sender
-                .send(&ControlMessage::AuthChallenge {
-                    nonce: [42u8; 32],
-                })
+                .send(&ControlMessage::AuthChallenge { nonce: [42u8; 32] })
                 .await
                 .unwrap();
 

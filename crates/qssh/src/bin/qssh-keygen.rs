@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use clap::Parser;
 use ml_dsa::{KeyGen, MlDsa65};
 use zeroize::Zeroizing;
@@ -90,7 +90,10 @@ fn print_pubkey(key_path: &PathBuf) -> Result<()> {
 
 fn default_key_path() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
-    PathBuf::from(home).join(".config").join("qssh").join("id_ml_dsa_65")
+    PathBuf::from(home)
+        .join(".config")
+        .join("qssh")
+        .join("id_ml_dsa_65")
 }
 
 fn user_at_host() -> String {

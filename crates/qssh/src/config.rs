@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 
 use crate::target::Target;
 
@@ -33,9 +33,9 @@ impl ForwardSpec {
                 target_host: host.to_string(),
                 target_port: target_port.parse().context("parsing target port")?,
             }),
-            _ => bail!(
-                "invalid forward spec '{s}'; expected [bind_addr:]bind_port:host:target_port"
-            ),
+            _ => {
+                bail!("invalid forward spec '{s}'; expected [bind_addr:]bind_port:host:target_port")
+            }
         }
     }
 }
@@ -54,6 +54,7 @@ pub struct ClientConfig {
 }
 
 impl ClientConfig {
+    #[allow(clippy::too_many_arguments)]
     pub fn resolve(
         target_str: &str,
         port_override: Option<u16>,

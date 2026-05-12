@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 
 /// Returned by `authenticate` when the server rejects the public key so the
 /// caller can distinguish auth failure from protocol/network errors.
@@ -54,9 +54,7 @@ async fn connect_once(config: &ClientConfig) -> Result<()> {
 
     let mut transport = quinn::TransportConfig::default();
     transport.max_idle_timeout(Some(
-        Duration::from_secs(300)
-            .try_into()
-            .expect("valid timeout"),
+        Duration::from_secs(300).try_into().expect("valid timeout"),
     ));
     transport.keep_alive_interval(Some(Duration::from_secs(15)));
 
@@ -96,7 +94,7 @@ async fn connect_once(config: &ClientConfig) -> Result<()> {
     let (send, recv) = conn.open_bi().await.context("opening control stream")?;
     let mut control = FramedBiStream::new(send, recv);
 
-    authenticate(&mut control, &config, &server_cert_fingerprint).await?;
+    authenticate(&mut control, config, &server_cert_fingerprint).await?;
     tracing::info!("authenticated as {}", config.username);
 
     // --- Start migration monitor ---
@@ -121,7 +119,10 @@ async fn connect_once(config: &ClientConfig) -> Result<()> {
                 );
             }
             ControlMessage::TcpForwardFailure { description } => {
-                anyhow::bail!("remote forward on port {} failed: {description}", rf.bind_port);
+                anyhow::bail!(
+                    "remote forward on port {} failed: {description}",
+                    rf.bind_port
+                );
             }
             other => anyhow::bail!("expected TcpForwardConfirm, got {other:?}"),
         }
@@ -150,7 +151,7 @@ async fn connect_once(config: &ClientConfig) -> Result<()> {
     if config.no_shell {
         tokio::signal::ctrl_c().await?;
     } else {
-        crate::channel::session::run(&conn, &config).await?;
+        crate::channel::session::run(&conn, config).await?;
     }
 
     conn.close(0u32.into(), b"bye");
@@ -163,8 +164,8 @@ async fn connect_once(config: &ClientConfig) -> Result<()> {
 /// squishd authorized_keys file.  Called when pubkey auth fails so that the
 /// next connection attempt succeeds.
 async fn install_key_via_ssh(config: &ClientConfig) -> Result<()> {
-    let key_bytes = crate::auth::load_signing_key(&config.identity_path)
-        .context("loading signing key")?;
+    let key_bytes =
+        crate::auth::load_signing_key(&config.identity_path).context("loading signing key")?;
     let seed = ml_dsa::B32::try_from(key_bytes.as_slice())
         .map_err(|_| anyhow::anyhow!("identity file must be a 32-byte ML-DSA-65 seed"))?;
     let key_pair = MlDsa65::key_gen_internal(&seed);
@@ -222,8 +223,7 @@ async fn authenticate(
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_secs();
-    let payload =
-        build_challenge_payload(&nonce, server_cert_fingerprint, &config.username, now);
+    let payload = build_challenge_payload(&nonce, server_cert_fingerprint, &config.username, now);
 
     // Load signing key seed and reconstruct the full ML-DSA-65 key pair
     let key_bytes = crate::auth::load_signing_key(&config.identity_path)?;
@@ -259,10 +259,7 @@ async fn authenticate(
 fn compute_cert_fingerprint(conn: &quinn::Connection) -> [u8; 32] {
     let certs = conn
         .peer_identity()
-        .and_then(|id| {
-            id.downcast::<Vec<rustls::pki_types::CertificateDer>>()
-                .ok()
-        })
+        .and_then(|id| id.downcast::<Vec<rustls::pki_types::CertificateDer>>().ok())
         .expect("server must present a TLS certificate");
 
     let server_cert = certs

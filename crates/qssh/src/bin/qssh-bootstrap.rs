@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use qssh::bootstrap::{run, BootstrapConfig};
+use qssh::bootstrap::{BootstrapConfig, run};
 use tracing_subscriber::EnvFilter;
 
 #[derive(Parser)]

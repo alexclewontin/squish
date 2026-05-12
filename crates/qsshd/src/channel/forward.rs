@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use qssh_core::proto::channel::*;
 use qssh_core::transport::framing::FramedBiStream;
 use quinn::Connection;
@@ -28,11 +28,7 @@ pub async fn handle_direct_tcpip(mut stream: FramedBiStream, params: TcpipParams
 
 /// Bind a TCP listener on the server and open a ForwardedTcpip QUIC stream
 /// to the client for every accepted connection.
-pub async fn run_remote_forward(
-    conn: Connection,
-    bind_addr: String,
-    bind_port: u16,
-) -> Result<()> {
+pub async fn run_remote_forward(conn: Connection, bind_addr: String, bind_port: u16) -> Result<()> {
     let bind = format!("{bind_addr}:{bind_port}");
     let listener = TcpListener::bind(&bind)
         .await

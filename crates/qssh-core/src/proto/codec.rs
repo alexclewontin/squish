@@ -14,20 +14,16 @@ where
     W: AsyncWrite + Unpin,
     T: Serialize,
 {
-    let payload =
-        to_allocvec(msg).map_err(|e| QsshError::Codec(format!("serialize: {e}")))?;
+    let payload = to_allocvec(msg).map_err(|e| QsshError::Codec(format!("serialize: {e}")))?;
 
-    let len = u32::try_from(payload.len())
-        .map_err(|_| QsshError::Codec("message too large".into()))?;
+    let len =
+        u32::try_from(payload.len()).map_err(|_| QsshError::Codec("message too large".into()))?;
 
     writer
         .write_all(&len.to_le_bytes())
         .await
         .map_err(QsshError::Io)?;
-    writer
-        .write_all(&payload)
-        .await
-        .map_err(QsshError::Io)?;
+    writer.write_all(&payload).await.map_err(QsshError::Io)?;
 
     Ok(())
 }
@@ -52,10 +48,7 @@ where
     }
 
     let mut buf = vec![0u8; len as usize];
-    reader
-        .read_exact(&mut buf)
-        .await
-        .map_err(QsshError::Io)?;
+    reader.read_exact(&mut buf).await.map_err(QsshError::Io)?;
 
     from_bytes(&buf).map_err(|e| QsshError::Codec(format!("deserialize: {e}")))
 }

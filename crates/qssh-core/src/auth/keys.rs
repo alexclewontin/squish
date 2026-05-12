@@ -28,7 +28,7 @@ pub fn parse_authorized_keys(contents: &str) -> Vec<Vec<u8>> {
         .filter_map(|line| {
             let mut parts = line.split_whitespace();
             let _key_type = parts.next()?; // e.g. "ml-dsa-65"
-            let key_data = parts.next()?;  // base64-encoded verifying key
+            let key_data = parts.next()?; // base64-encoded verifying key
             engine.decode(key_data).ok()
         })
         .collect()

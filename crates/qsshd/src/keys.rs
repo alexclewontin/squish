@@ -10,7 +10,10 @@ use rcgen::KeyPair;
 pub fn load_or_generate_tls_identity(
     key_path: &Path,
     cert_path: &Path,
-) -> Result<(rustls::pki_types::CertificateDer<'static>, rustls::pki_types::PrivateKeyDer<'static>)> {
+) -> Result<(
+    rustls::pki_types::CertificateDer<'static>,
+    rustls::pki_types::PrivateKeyDer<'static>,
+)> {
     if key_path.exists() && cert_path.exists() {
         let key_pem = std::fs::read_to_string(key_path)
             .with_context(|| format!("reading host key from {}", key_path.display()))?;

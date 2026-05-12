@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use ml_dsa::{EncodedVerifyingKey, MlDsa65, Signature, VerifyingKey};
 use qssh_core::auth::challenge::build_challenge_payload;
 use qssh_core::auth::keys::parse_authorized_keys;
@@ -16,10 +16,7 @@ use crate::config::ServerConfig;
 
 pub async fn handle(conn: Connection, config: &Arc<ServerConfig>) -> Result<()> {
     // The first bidi stream is the control stream (auth + session management).
-    let (send, recv) = conn
-        .accept_bi()
-        .await
-        .context("accepting control stream")?;
+    let (send, recv) = conn.accept_bi().await.context("accepting control stream")?;
 
     let mut control = FramedBiStream::new(send, recv);
 

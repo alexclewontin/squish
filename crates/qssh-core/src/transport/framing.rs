@@ -19,9 +19,9 @@ impl FramedSender {
     }
 
     pub async fn finish(mut self) -> Result<(), QsshError> {
-        self.inner.finish().map_err(|e| {
-            QsshError::Protocol(format!("failed to finish stream: {e}"))
-        })
+        self.inner
+            .finish()
+            .map_err(|e| QsshError::Protocol(format!("failed to finish stream: {e}")))
     }
 }
 

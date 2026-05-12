@@ -8,14 +8,13 @@ const QSSHD_CONFIG_PATH: &str = "/etc/qssh/qsshd.toml";
 
 /// Generate the qsshd.toml content for a fresh server install.
 pub fn default_config() -> String {
-    format!(
-        r#"bind_addr = "0.0.0.0"
+    r#"bind_addr = "0.0.0.0"
 port = 2222
 host_key = "/etc/qssh/host.key"
 host_cert = "/etc/qssh/host.cert"
 authorized_keys = "/etc/qssh/authorized_keys"
 "#
-    )
+    .to_string()
 }
 
 /// Install qsshd as a system service and start it.

@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 
 /// A parsed remote target: optional user, hostname, optional port.
 #[derive(Debug, Clone)]

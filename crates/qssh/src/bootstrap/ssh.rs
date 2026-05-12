@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::process::Command;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 
 /// Runs commands and uploads files on a remote host via the system `ssh`/`scp`.
 pub struct SshRunner {

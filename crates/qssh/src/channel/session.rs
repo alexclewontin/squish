@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use crossterm::terminal;
 use qssh_core::proto::channel::*;
 use qssh_core::transport::framing::FramedBiStream;
@@ -146,13 +146,13 @@ pub async fn run(conn: &Connection, config: &ClientConfig) -> Result<()> {
     // We multiplex stdin reads and SIGWINCH into a single task that owns the
     // `FramedSender`.
     {
-        use tokio::signal::unix::{signal, SignalKind};
+        use tokio::signal::unix::{SignalKind, signal};
 
         let mut stdin = tokio::io::stdin();
         let mut buf = [0u8; 4096];
 
-        let mut sigwinch = signal(SignalKind::window_change())
-            .context("registering SIGWINCH handler")?;
+        let mut sigwinch =
+            signal(SignalKind::window_change()).context("registering SIGWINCH handler")?;
 
         loop {
             tokio::select! {
@@ -215,10 +215,10 @@ pub async fn run(conn: &Connection, config: &ClientConfig) -> Result<()> {
     // Drop the raw-mode guard (if held) before printing the final status.
     drop(_raw_guard);
 
-    if let Some(code) = exit_status {
-        if code != 0 {
-            bail!("remote process exited with status {code}");
-        }
+    if let Some(code) = exit_status
+        && code != 0
+    {
+        bail!("remote process exited with status {code}");
     }
 
     Ok(())

@@ -58,17 +58,14 @@ pub fn run(cfg: &BootstrapConfig) -> Result<()> {
     eprintln!("[bootstrap] remote OS: {os_label} ({arch})");
 
     // 2. Ensure qsshd is installed.
-    let installed = detect::is_qsshd_installed(&runner)
-        .context("checking qsshd install status")?;
+    let installed = detect::is_qsshd_installed(&runner).context("checking qsshd install status")?;
 
     if !installed {
         let url = release_asset_url(cfg.squishd_version.as_deref(), target);
         eprintln!("[bootstrap] downloading qsshd from {url}…");
         let fetch = fetch_command(os, &url);
         runner
-            .run(&format!(
-                "{fetch} | tar xzf - -C /tmp qsshd"
-            ))
+            .run(&format!("{fetch} | tar xzf - -C /tmp qsshd"))
             .context("downloading and extracting qsshd")?;
         runner
             .sudo(&format!("install -m 755 /tmp/qsshd {QSSHD_INSTALL_PATH}"))
@@ -81,7 +78,7 @@ pub fn run(cfg: &BootstrapConfig) -> Result<()> {
     eprintln!("[bootstrap] writing server config…");
     let config_content = build_server_config(cfg.qsshd_port);
     runner
-        .sudo(&format!("mkdir -p /etc/qssh && chmod 755 /etc/qssh"))
+        .sudo("mkdir -p /etc/qssh && chmod 755 /etc/qssh")
         .context("creating /etc/qssh")?;
 
     // Write to /tmp first, then sudo-move into place.
@@ -96,8 +93,8 @@ pub fn run(cfg: &BootstrapConfig) -> Result<()> {
 
     // 4. Add client public key to authorized_keys (append if not already present).
     eprintln!("[bootstrap] configuring authorized_keys…");
-    let pubkey = keys::ensure_client_keypair(&cfg.identity_path)
-        .context("ensuring client key pair")?;
+    let pubkey =
+        keys::ensure_client_keypair(&cfg.identity_path).context("ensuring client key pair")?;
     let ak_line = keys::format_authorized_key(&pubkey, "");
     runner
         .sudo(&format!(
@@ -112,8 +109,7 @@ pub fn run(cfg: &BootstrapConfig) -> Result<()> {
     let already_running = detect::is_qsshd_running(&runner).unwrap_or(false);
     if !already_running {
         eprintln!("[bootstrap] installing and starting qsshd service…");
-        service::install_and_start(&runner, os)
-            .context("installing qsshd service")?;
+        service::install_and_start(&runner, os).context("installing qsshd service")?;
     } else {
         eprintln!("[bootstrap] qsshd already running, reloading config…");
         reload_service(&runner, os).context("reloading qsshd")?;
@@ -121,8 +117,8 @@ pub fn run(cfg: &BootstrapConfig) -> Result<()> {
 
     // 6. Capture fingerprint and pin in known_hosts.
     eprintln!("[bootstrap] capturing server certificate fingerprint…");
-    let fingerprint = service::fetch_fingerprint(&runner)
-        .context("fetching server cert fingerprint")?;
+    let fingerprint =
+        service::fetch_fingerprint(&runner).context("fetching server cert fingerprint")?;
     let fingerprint = fingerprint.trim().to_string();
 
     let host_port = format!("{}:{}", cfg.host, cfg.qsshd_port);
@@ -169,11 +165,9 @@ authorized_keys = "{QSSHD_AUTH_KEYS_PATH}"
 fn reload_service(runner: &SshRunner, os: OsKind) -> Result<()> {
     match os {
         OsKind::Linux => runner.sudo("systemctl restart qsshd"),
-        OsKind::MacOs => {
-            runner.sudo(
-                "launchctl unload /Library/LaunchDaemons/com.qssh.qsshd.plist 2>/dev/null; \
+        OsKind::MacOs => runner.sudo(
+            "launchctl unload /Library/LaunchDaemons/com.qssh.qsshd.plist 2>/dev/null; \
                  launchctl load -w /Library/LaunchDaemons/com.qssh.qsshd.plist",
-            )
-        }
+        ),
     }
 }

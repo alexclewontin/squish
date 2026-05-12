@@ -4,7 +4,7 @@ use std::process::Stdio;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use nix::pty::{openpty, Winsize};
+use nix::pty::{Winsize, openpty};
 use nix::sys::signal::{self, Signal};
 use nix::unistd::Pid;
 use qssh_core::proto::channel::*;
@@ -17,11 +17,7 @@ use crate::config::ServerConfig;
 // ---------------------------------------------------------------------------
 // TIOCSWINSZ ioctl — resize a PTY. Works on both macOS and Linux.
 // ---------------------------------------------------------------------------
-nix::ioctl_write_ptr_bad!(
-    tiocswinsz,
-    libc::TIOCSWINSZ,
-    Winsize
-);
+nix::ioctl_write_ptr_bad!(tiocswinsz, libc::TIOCSWINSZ, Winsize);
 
 /// Handle a session channel.  Called after the dispatcher has already read
 /// the `Open` message and sent `OpenConfirmation`.
@@ -128,8 +124,8 @@ async fn run_child(
         ws_ypixel: p.height_px as u16,
     });
 
-    let pty_result = openpty(winsize.as_ref(), None::<&nix::sys::termios::Termios>)
-        .context("openpty failed")?;
+    let pty_result =
+        openpty(winsize.as_ref(), None::<&nix::sys::termios::Termios>).context("openpty failed")?;
 
     let master_fd = pty_result.master;
     let slave_fd = pty_result.slave;
@@ -195,11 +191,7 @@ async fn run_child(
     let exit_status = io_pump(stream, &async_master, &mut child).await?;
 
     // Send exit status and close.
-    stream
-        .sender
-        .send(&ChannelMessage::Eof)
-        .await
-        .ok(); // best-effort
+    stream.sender.send(&ChannelMessage::Eof).await.ok(); // best-effort
     stream
         .sender
         .send(&ChannelMessage::ExitStatus {
@@ -207,11 +199,7 @@ async fn run_child(
         })
         .await
         .ok();
-    stream
-        .sender
-        .send(&ChannelMessage::Close)
-        .await
-        .ok();
+    stream.sender.send(&ChannelMessage::Close).await.ok();
 
     tracing::info!(%username, exit_status, "session ended");
     Ok(())
@@ -346,12 +334,7 @@ async fn io_pump(
     }
 
     // If we broke out of the loop (PTY EOF or client close), wait for the child.
-    match tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        child.wait(),
-    )
-    .await
-    {
+    match tokio::time::timeout(std::time::Duration::from_secs(5), child.wait()).await {
         Ok(Ok(status)) => Ok(exit_code_from_status(status)),
         Ok(Err(e)) => Err(e).context("waiting for child after loop exit"),
         Err(_timeout) => {
@@ -368,15 +351,10 @@ async fn io_pump(
 
 async fn write_all_to_fd(fd: &AsyncFd<OwnedFd>, mut buf: &[u8]) -> Result<()> {
     while !buf.is_empty() {
-        let mut guard = fd
-            .writable()
-            .await
-            .context("waiting for pty writable")?;
+        let mut guard = fd.writable().await.context("waiting for pty writable")?;
         match guard.try_io(|inner| {
             let raw = inner.as_raw_fd();
-            let n = unsafe {
-                libc::write(raw, buf.as_ptr() as *const libc::c_void, buf.len())
-            };
+            let n = unsafe { libc::write(raw, buf.as_ptr() as *const libc::c_void, buf.len()) };
             if n < 0 {
                 Err(std::io::Error::last_os_error())
             } else {
@@ -401,10 +379,10 @@ async fn write_all_to_fd(fd: &AsyncFd<OwnedFd>, mut buf: &[u8]) -> Result<()> {
 /// then fall back to /etc/passwd, then /bin/sh.
 fn lookup_shell(username: &str) -> String {
     // 1. $SHELL env var (common on macOS and development setups)
-    if let Ok(shell) = std::env::var("SHELL") {
-        if !shell.is_empty() {
-            return shell;
-        }
+    if let Ok(shell) = std::env::var("SHELL")
+        && !shell.is_empty()
+    {
+        return shell;
     }
 
     // 2. /etc/passwd lookup via libc getpwnam
@@ -427,11 +405,7 @@ fn lookup_shell_passwd(username: &str) -> Option<String> {
     }
     let shell = unsafe { std::ffi::CStr::from_ptr((*pw).pw_shell) };
     let s = shell.to_str().ok()?.to_string();
-    if s.is_empty() {
-        None
-    } else {
-        Some(s)
-    }
+    if s.is_empty() { None } else { Some(s) }
 }
 
 fn set_nonblocking(fd: &OwnedFd) -> Result<()> {
