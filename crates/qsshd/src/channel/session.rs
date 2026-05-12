@@ -1,4 +1,4 @@
-use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+use std::os::fd::{AsRawFd, OwnedFd};
 use std::os::unix::process::CommandExt;
 use std::process::Stdio;
 use std::sync::Arc;
@@ -229,7 +229,7 @@ async fn io_pump(
             readable = async_master.readable() => {
                 let mut guard = readable.context("waiting for pty readable")?;
                 match guard.try_io(|inner| {
-                    nix::unistd::read(inner.as_raw_fd(), &mut pty_read_buf)
+                    nix::unistd::read(inner.get_ref(), &mut pty_read_buf)
                         .map_err(std::io::Error::from)
                 }) {
                     Ok(Ok(0)) => {
@@ -396,20 +396,15 @@ fn lookup_shell_passwd(username: &str) -> Option<String> {
 }
 
 fn set_nonblocking(fd: &OwnedFd) -> Result<()> {
-    let flags = nix::fcntl::fcntl(fd.as_raw_fd(), FcntlArg::F_GETFL).context("fcntl F_GETFL")?;
+    let flags = nix::fcntl::fcntl(fd, FcntlArg::F_GETFL).context("fcntl F_GETFL")?;
     let mut oflags = OFlag::from_bits_truncate(flags);
     oflags.insert(OFlag::O_NONBLOCK);
-    nix::fcntl::fcntl(fd.as_raw_fd(), FcntlArg::F_SETFL(oflags))
-        .context("fcntl F_SETFL O_NONBLOCK")?;
+    nix::fcntl::fcntl(fd, FcntlArg::F_SETFL(oflags)).context("fcntl F_SETFL O_NONBLOCK")?;
     Ok(())
 }
 
 fn fd_to_stdio(fd: &OwnedFd) -> Result<Stdio> {
-    let raw = nix::unistd::dup(fd.as_raw_fd())?;
-    // SAFETY: nix 0.29's dup() returns a RawFd rather than OwnedFd. The fd
-    // is freshly created by dup(2), so we have sole ownership and it is valid
-    // for the lifetime of the OwnedFd we wrap it in.
-    Ok(Stdio::from(unsafe { OwnedFd::from_raw_fd(raw) }))
+    Ok(Stdio::from(nix::unistd::dup(fd)?))
 }
 
 fn exit_code_from_status(status: std::process::ExitStatus) -> u32 {
