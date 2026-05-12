@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use quinn::Endpoint;
 use tokio::sync::Semaphore;
 
@@ -27,7 +27,7 @@ pub async fn run(config: ServerConfig) -> Result<()> {
     transport.max_idle_timeout(Some(
         Duration::from_secs(config.idle_timeout_secs)
             .try_into()
-            .expect("valid idle timeout"),
+            .context("idle_timeout_secs is too large")?,
     ));
     transport.keep_alive_interval(Some(Duration::from_secs(15)));
 
