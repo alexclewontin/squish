@@ -56,13 +56,15 @@ The current handshake is:
 5. server verifies both authorization and signature,
 6. server replies with `AuthResult`.
 
-The challenge payload binds the proof to:
+The challenge payload is:
+
+- `SHA-512("qssh-auth-challenge-v1" || nonce || server_cert_fingerprint || username_len_le_u16 || username_bytes)`
+
+This binds the proof to:
 
 - the server certificate fingerprint,
-- the requested username,
-- the challenge nonce,
-- the current time.
-
+- the requested username (with explicit length prefix),
+- the challenge nonce.
 ## Channel model
 
 Each channel lives on its own QUIC bidirectional stream.

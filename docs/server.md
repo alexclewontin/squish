@@ -11,7 +11,7 @@ qsshd [OPTIONS]
 Options:
 
 - `-c, --config <PATH>` — path to the TOML config file.
-- `--emit-fingerprint` — print the SHA-256 fingerprint of the configured server certificate and exit.
+- `--emit-fingerprint` — print the SHA-256 fingerprint of the live certificate loaded at startup and exit.
 
 Default config path:
 
@@ -29,6 +29,10 @@ Current fields:
 - `host_cert` — path to the TLS certificate
 - `max_connections` — default `100`
 - `idle_timeout_secs` — default `300`
+- `direct_tcpip_allowlist` — default `[]`; exact-match `"host:port"` allowlist for `direct-tcpip` opens
+- `remote_forward_allowlist` — default `[]`; exact-match `"bind_addr:bind_port"` exceptions for non-loopback remote forwards
+- `max_channels_per_connection` — default `32`
+- `max_remote_forwards_per_connection` — default `8`
 
 Minimal example:
 
@@ -37,7 +41,25 @@ bind_addr = "0.0.0.0"
 port = 2222
 host_key = "/etc/qssh/host.key"
 host_cert = "/etc/qssh/host.cert"
+
+# Deny-by-default for direct-tcpip; add exact host:port entries to permit.
+direct_tcpip_allowlist = ["127.0.0.1:5432"]
+
+# Remote forwards are loopback-only by default; add exact bind exceptions when needed.
+remote_forward_allowlist = ["0.0.0.0:22222"]
+
+# Per authenticated connection.
+max_channels_per_connection = 32
+max_remote_forwards_per_connection = 8
 ```
+## Host key and certificate files
+
+When `host_key`/`host_cert` do not exist, `qsshd` generates them at startup.
+
+On Unix:
+- the parent directory is created with mode `0700` when `qsshd` creates it,
+- the new private key file is created owner-only with mode `0600` from first open (no write-then-chmod window).
+
 
 ## Authentication model
 
@@ -51,11 +73,12 @@ For user authentication the server:
 - receives `ClientHello`,
 - sends a random challenge nonce,
 - checks the presented public key against the target user's `~/.squish/authorized_keys`,
-- rebuilds the signed challenge payload,
+- rebuilds the signed challenge payload (`SHA-512("qssh-auth-challenge-v1" || nonce || server_cert_fingerprint || username_len_le_u16 || username_bytes)`),
 - verifies the ML-DSA-65 signature,
 - only then opens the session.
 
-Authorized keys are scoped to the requested remote user. A key is only valid if it appears in that user's authorized key file.
+Authorized keys are scoped to the requested remote user. A key is only valid if it appears in that user's authorized key file, and each accepted line must use the exact `ml-dsa-65` key type.
+The certificate fingerprint used in the signed auth challenge is cached from the exact certificate DER passed into rustls at startup; it is not re-read from `host_cert` during authentication.
 
 ## Authorized keys safety checks
 
@@ -85,11 +108,24 @@ The session implementation launches the child process under the target account, 
 
 ### Direct TCP/IP
 
-When the client requests local forwarding, the server accepts a `direct-tcpip` channel, connects to the requested remote-side target, and relays data.
+`direct-tcpip` is deny-by-default.
+
+A request is accepted only when its exact `host:port` appears in `direct_tcpip_allowlist`.
+No wildcard syntax is supported.
+
+Unauthorized requests are rejected with channel open failure.
 
 ### Remote forwarding
 
-When the client requests remote forwarding, the server:
+Remote forwarding requests are loopback-only by default (`127.0.0.1`, `::1`, or `localhost`).
+
+Non-loopback binds are accepted only when the exact `bind_addr:bind_port` appears in `remote_forward_allowlist`.
+No wildcard syntax is supported.
+
+Per authenticated connection, the server also enforces `max_remote_forwards_per_connection`.
+Rejected requests return `TcpForwardFailure`.
+
+When accepted, the server:
 
 - binds a TCP listener on the remote machine,
 - accepts inbound TCP connections,
@@ -111,6 +147,9 @@ Current channel types:
 - `session`
 - `direct-tcpip`
 - `forwarded-tcpip`
+
+Per authenticated connection, channel opens are capped by `max_channels_per_connection`.
+Over-limit opens are rejected with channel open failure.
 
 ## Operational notes
 

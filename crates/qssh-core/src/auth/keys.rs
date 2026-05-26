@@ -27,7 +27,10 @@ pub fn parse_authorized_keys(contents: &str) -> Vec<Vec<u8>> {
         })
         .filter_map(|line| {
             let mut parts = line.split_whitespace();
-            let _key_type = parts.next()?; // e.g. "ml-dsa-65"
+            let key_type = parts.next()?; // e.g. "ml-dsa-65"
+            if key_type != "ml-dsa-65" {
+                return None;
+            }
             let key_data = parts.next()?; // base64-encoded verifying key
             engine.decode(key_data).ok()
         })
@@ -81,6 +84,14 @@ mod tests {
     fn skip_invalid_base64() {
         let contents = "ml-dsa-65 @@@ not base64 @@@\nml-dsa-65 ~~~\n";
         let keys = parse_authorized_keys(contents);
+        assert!(keys.is_empty());
+    }
+    #[test]
+    fn skip_non_mldsa65_key_types() {
+        let engine = base64::engine::general_purpose::STANDARD;
+        let key = engine.encode(b"not-ml-dsa");
+        let contents = format!("ssh-ed25519 {key}\n");
+        let keys = parse_authorized_keys(&contents);
         assert!(keys.is_empty());
     }
 

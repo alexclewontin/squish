@@ -119,6 +119,7 @@ impl ForwardSpec {
 pub struct ClientConfig {
     pub host: String,
     pub port: u16,
+    pub ssh_port: u16,
     pub username: String,
     pub identity_path: PathBuf,
     pub known_hosts_path: PathBuf,
@@ -138,6 +139,7 @@ impl ClientConfig {
     pub fn resolve(
         target_str: &str,
         port_override: Option<u16>,
+        ssh_port_override: Option<u16>,
         user_override: Option<&str>,
         identity_override: Option<&str>,
         command_parts: &[String],
@@ -152,6 +154,7 @@ impl ClientConfig {
         Self::resolve_with_home(
             target_str,
             port_override,
+            ssh_port_override,
             user_override,
             identity_override,
             command_parts,
@@ -170,6 +173,7 @@ impl ClientConfig {
     fn resolve_with_home(
         target_str: &str,
         port_override: Option<u16>,
+        ssh_port_override: Option<u16>,
         user_override: Option<&str>,
         identity_override: Option<&str>,
         command_parts: &[String],
@@ -196,6 +200,7 @@ impl ClientConfig {
             .unwrap_or_else(|| "root".into());
 
         let port = port_override.or(target.port).or(ssh.port).unwrap_or(2222);
+        let ssh_port = ssh_port_override.unwrap_or(22);
 
         let identity_path = identity_override
             .map(PathBuf::from)
@@ -242,6 +247,7 @@ impl ClientConfig {
         Ok(Self {
             host,
             port,
+            ssh_port,
             username,
             identity_path,
             known_hosts_path,
@@ -549,6 +555,7 @@ Host prod-*
             None,
             None,
             None,
+            None,
             EMPTY,
             EMPTY,
             EMPTY,
@@ -564,6 +571,7 @@ Host prod-*
         assert_eq!(config.host, "prod.internal");
         assert_eq!(config.username, "deploy");
         assert_eq!(config.port, 2244);
+        assert_eq!(config.ssh_port, 22);
         assert_eq!(
             config.identity_path,
             home.path().join(".ssh/qssh_deploy_prod.internal_2244")
@@ -612,6 +620,7 @@ Host prod
         let config = ClientConfig::resolve_with_home(
             "target-user@prod:3022",
             Some(4022),
+            Some(2200),
             Some("cli-user"),
             Some("/tmp/cli-key"),
             EMPTY,
@@ -629,6 +638,7 @@ Host prod
         assert_eq!(config.host, "config-host");
         assert_eq!(config.username, "cli-user");
         assert_eq!(config.port, 4022);
+        assert_eq!(config.ssh_port, 2200);
         assert_eq!(config.identity_path, PathBuf::from("/tmp/cli-key"));
         assert_eq!(config.control_path, PathBuf::from("/tmp/cli-cm"));
         assert!(config.control_master_auto);

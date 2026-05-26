@@ -18,6 +18,9 @@ pub struct Cli {
     #[arg(short = 'l', long)]
     pub user: Option<String>,
 
+    /// SSH port to use if qssh falls back to installing the public key over SSH
+    #[arg(long, default_value = "22")]
+    pub ssh_port: u16,
     /// Identity (private key) file
     #[arg(short, long)]
     pub identity: Option<String>,
@@ -60,6 +63,7 @@ async fn main() -> Result<()> {
     let config = ClientConfig::resolve(
         &cli.target,
         cli.port,
+        Some(cli.ssh_port),
         cli.user.as_deref(),
         cli.identity.as_deref(),
         &cli.command,

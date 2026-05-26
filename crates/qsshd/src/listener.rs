@@ -10,18 +10,20 @@ use crate::config::ServerConfig;
 use crate::connection;
 use crate::keys;
 
-pub async fn run(config: ServerConfig) -> Result<()> {
+pub async fn run(mut config: ServerConfig) -> Result<()> {
     let (cert_der, key_der) =
         keys::load_or_generate_tls_identity(&config.host_key, &config.host_cert)?;
 
     // Use aws-lc-rs provider (includes PQ key exchange via ML-KEM)
     let provider = rustls::crypto::aws_lc_rs::default_provider();
 
+    let cert_fingerprint = qssh_core::auth::fingerprint::cert_fingerprint(cert_der.as_ref());
     let tls_config = rustls::ServerConfig::builder_with_provider(Arc::new(provider))
         .with_protocol_versions(&[&rustls::version::TLS13])
         .expect("TLS 1.3 config")
         .with_no_client_auth()
         .with_single_cert(vec![cert_der], key_der)?;
+    config.live_cert_fingerprint = cert_fingerprint;
 
     let mut transport = quinn::TransportConfig::default();
     transport.max_idle_timeout(Some(

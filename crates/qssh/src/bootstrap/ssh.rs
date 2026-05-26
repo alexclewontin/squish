@@ -1,7 +1,9 @@
+use std::io::Write;
 use std::path::Path;
 use std::process::Command;
 
 use anyhow::{Context, Result, bail};
+use tempfile::NamedTempFile;
 
 /// Runs commands and uploads files on a remote host via the system `ssh`/`scp`.
 pub struct SshRunner {
@@ -42,9 +44,9 @@ impl SshRunner {
     pub fn sudo(&self, cmd: &str) -> Result<()> {
         let status = Command::new("ssh")
             .args(["-p", &self.ssh_port.to_string()])
-            .arg("-t") // allocate a PTY so sudo can prompt
+            .arg("-t")
             .arg(self.userhost())
-            .arg(format!("sudo {cmd}"))
+            .arg(format!("sudo sh -c {}", shell_single_quote(cmd)))
             .status()
             .context("spawning ssh for sudo")?;
 
@@ -70,30 +72,59 @@ impl SshRunner {
         Ok(())
     }
 
-    /// Write a string as a remote file via a here-string piped through ssh.
+    /// Write a string to a remote path by uploading a temporary local file.
     pub fn write_file(&self, remote_path: &str, content: &str) -> Result<()> {
-        use std::io::Write as _;
-        let mut child = Command::new("ssh")
-            .args(["-p", &self.ssh_port.to_string()])
-            .arg("-o")
-            .arg("BatchMode=yes")
-            .arg(self.userhost())
-            .arg(format!("cat > {remote_path}"))
-            .stdin(std::process::Stdio::piped())
-            .spawn()
-            .context("spawning ssh for write_file")?;
+        let mut temp = NamedTempFile::new().context("creating temporary upload file")?;
+        temp.write_all(content.as_bytes())
+            .context("writing temporary upload file")?;
+        self.upload(temp.path(), remote_path)
+    }
 
-        child
-            .stdin
-            .as_mut()
-            .unwrap()
-            .write_all(content.as_bytes())
-            .context("writing to remote file")?;
+    /// Add an authorized_keys line to `~/.squish/authorized_keys` without
+    /// interpolating the key contents into a remote shell command.
+    pub fn install_authorized_key(&self, authorized_key_line: &str) -> Result<()> {
+        const REMOTE_TEMP_KEY: &str = "/tmp/qssh-authorized-key";
 
-        let status = child.wait()?;
-        if !status.success() {
-            bail!("failed to write remote file {remote_path}");
-        }
-        Ok(())
+        let mut key_file = String::with_capacity(authorized_key_line.len() + 1);
+        key_file.push_str(authorized_key_line);
+        key_file.push('\n');
+        self.write_file(REMOTE_TEMP_KEY, &key_file)
+            .context("uploading authorized key line")?;
+
+        self.run(&authorized_key_install_command(REMOTE_TEMP_KEY))
+            .map(|_| ())
+            .context("installing authorized key")
+    }
+}
+
+fn authorized_key_install_command(remote_temp_key: &str) -> String {
+    format!(
+        "sh -c 'mkdir -p \"$HOME/.squish\" && chmod 700 \"$HOME/.squish\" && \
+         touch \"$HOME/.squish/authorized_keys\" && chmod 600 \"$HOME/.squish/authorized_keys\" && \
+         {{ grep -qxF -f {remote_temp_key} \"$HOME/.squish/authorized_keys\" || \
+            cat {remote_temp_key} >> \"$HOME/.squish/authorized_keys\"; }} && \
+         rm -f {remote_temp_key}'"
+    )
+}
+
+fn shell_single_quote(input: &str) -> String {
+    format!("'{}'", input.replace('\'', r#"'\''"#))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{authorized_key_install_command, shell_single_quote};
+
+    #[test]
+    fn authorized_key_install_command_uses_temp_file_contents() {
+        let cmd = authorized_key_install_command("/tmp/test-key");
+        assert!(cmd.contains("grep -qxF -f /tmp/test-key"));
+        assert!(cmd.contains("cat /tmp/test-key >> \"$HOME/.squish/authorized_keys\""));
+        assert!(!cmd.contains("ml-dsa-65"));
+    }
+
+    #[test]
+    fn shell_single_quote_escapes_embedded_single_quotes() {
+        assert_eq!(shell_single_quote("echo 'hi'"), "'echo '\\''hi'\\'''");
     }
 }

@@ -19,6 +19,7 @@ Important options:
 - `-S, --control-path <PATH>` — choose the local control socket path.
 - `-M, --control-master` — run as the local master for that target.
 - `--control-persist [DURATION]` — keep a master alive after client sessions disconnect.
+- `--ssh-port <PORT>` — SSH port to use if qssh must fall back to installing your public key over SSH.
 
 Target format:
 
@@ -56,8 +57,8 @@ The client uses trust-on-first-use pinning for the server TLS certificate finger
 - pins are stored in `~/.config/qssh/known_hosts`,
 - keys are stored by `host:port`,
 - first contact records the presented fingerprint,
-- later changes are rejected until the pin is updated manually.
-
+- later changes are rejected until the pin is updated manually,
+- group/other-accessible `known_hosts` files are rejected on Unix.
 This is not OpenSSH host-key parsing; it is Squish-specific fingerprint storage.
 
 ## Connection migration
@@ -155,13 +156,15 @@ Supported path substitutions in `IdentityFile` and `ControlPath`:
 
 User authentication is based on an ML-DSA-65 keypair derived from a 32-byte seed file.
 
-The client signs a server challenge that is bound to:
+The client signs a server challenge payload defined as:
+
+- `SHA-512("qssh-auth-challenge-v1" || nonce || server_cert_fingerprint || username_len_le_u16 || username_bytes)`
+
+This binds the proof to:
 
 - the server certificate fingerprint,
-- the user name,
-- the challenge nonce,
-- the current time.
-
+- the user name (length-prefixed),
+- the challenge nonce.
 If public-key authentication is rejected, the client currently has a fallback path that uses the system `ssh` binary to append the generated public key to the remote user's `~/.squish/authorized_keys`, then retries.
 
 ## Examples

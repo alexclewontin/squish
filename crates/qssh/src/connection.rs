@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 
@@ -23,6 +23,7 @@ use qssh_core::transport::framing::FramedBiStream;
 use quinn::Endpoint;
 use signature::Signer;
 
+use crate::bootstrap::ssh::SshRunner;
 use crate::config::ClientConfig;
 use crate::control::MasterConnection;
 use crate::known_hosts::KnownHosts;
@@ -171,7 +172,7 @@ async fn establish_connection(config: &ClientConfig) -> Result<MasterConnection>
     tracing::info!("connected to {addr}");
 
     // --- Host key verification (TOFU) ---
-    let server_cert_fingerprint = compute_cert_fingerprint(&conn);
+    let server_cert_fingerprint = compute_cert_fingerprint(&conn)?;
     let mut known_hosts = KnownHosts::load(&config.known_hosts_path)?;
     let host_port = format!("{}:{}", config.host, config.port);
     known_hosts.verify(&host_port, &hex::encode(server_cert_fingerprint))?;
@@ -191,7 +192,7 @@ async fn establish_connection(config: &ClientConfig) -> Result<MasterConnection>
 }
 
 /// Use the system `ssh` to append our ML-DSA-65 public key to the server's
-/// squishd authorized_keys file.  Called when pubkey auth fails so that the
+/// squishd authorized_keys file. Called when pubkey auth fails so that the
 /// next connection attempt succeeds.
 async fn install_key_via_ssh(config: &ClientConfig) -> Result<()> {
     let key_bytes =
@@ -202,26 +203,14 @@ async fn install_key_via_ssh(config: &ClientConfig) -> Result<()> {
     let pubkey_bytes: Vec<u8> = key_pair.verifying_key().encode().to_vec();
     let ak_line = crate::bootstrap::keys::format_authorized_key(&pubkey_bytes, "");
 
-    let userhost = format!("{}@{}", config.username, config.host);
-    // Append the key only if it isn't already present; then lock down perms.
-    // Writes to the user's own home — no sudo needed.
-    let remote_cmd = format!(
-        "sh -c 'mkdir -p \"$HOME/.squish\" && chmod 700 \"$HOME/.squish\" && \
-         grep -qF \"{ak_line}\" \"$HOME/.squish/authorized_keys\" 2>/dev/null || \
-         {{ echo \"{ak_line}\" >> \"$HOME/.squish/authorized_keys\" && \
-            chmod 600 \"$HOME/.squish/authorized_keys\"; }}'"
-    );
-
-    let status = tokio::process::Command::new("ssh")
-        .args(["-p", "22", &userhost, &remote_cmd])
-        .status()
+    let runner = SshRunner {
+        user: Some(config.username.clone()),
+        host: config.host.clone(),
+        ssh_port: config.ssh_port,
+    };
+    tokio::task::spawn_blocking(move || runner.install_authorized_key(&ak_line))
         .await
-        .context("spawning ssh for key installation")?;
-
-    if !status.success() {
-        bail!("SSH key installation failed");
-    }
-    Ok(())
+        .context("joining SSH key installation task")?
 }
 
 async fn authenticate(
@@ -250,11 +239,7 @@ async fn authenticate(
     };
 
     // 3. Sign the challenge
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
-    let payload = build_challenge_payload(&nonce, server_cert_fingerprint, &config.username, now);
+    let payload = build_challenge_payload(&nonce, server_cert_fingerprint, &config.username);
 
     // Load signing key seed and reconstruct the full ML-DSA-65 key pair
     let key_bytes = crate::auth::load_signing_key(&config.identity_path)?;
@@ -287,17 +272,22 @@ async fn authenticate(
     }
 }
 
-fn compute_cert_fingerprint(conn: &quinn::Connection) -> [u8; 32] {
-    let certs = conn
-        .peer_identity()
-        .and_then(|id| id.downcast::<Vec<rustls::pki_types::CertificateDer>>().ok())
-        .expect("server must present a TLS certificate");
+fn compute_cert_fingerprint(conn: &quinn::Connection) -> Result<[u8; 32]> {
+    let Some(peer_identity) = conn.peer_identity() else {
+        bail!("server did not present a peer identity");
+    };
 
-    let server_cert = certs
-        .first()
-        .expect("server certificate chain must not be empty");
+    let certs = peer_identity
+        .downcast::<Vec<rustls::pki_types::CertificateDer>>()
+        .map_err(|_| anyhow::anyhow!("peer identity is not a certificate chain"))?;
 
-    qssh_core::auth::fingerprint::cert_fingerprint(server_cert.as_ref())
+    let Some(server_cert) = certs.first() else {
+        bail!("server certificate chain is empty");
+    };
+
+    Ok(qssh_core::auth::fingerprint::cert_fingerprint(
+        server_cert.as_ref(),
+    ))
 }
 
 /// Certificate verifier that accepts any cert (we do our own TOFU pinning).

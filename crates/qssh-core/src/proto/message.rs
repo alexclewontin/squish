@@ -21,7 +21,8 @@ pub enum ControlMessage {
     AuthResponse {
         /// ML-DSA-65 encoded verifying (public) key
         pubkey: Vec<u8>,
-        /// ML-DSA-65 signature over the challenge payload
+        /// ML-DSA-65 signature over:
+        /// SHA-512("qssh-auth-challenge-v1" || nonce || server_cert_fingerprint || username_len_le_u16 || username_bytes)
         signature: Vec<u8>,
     },
 
