@@ -44,6 +44,8 @@ sha2.workspace = true
 base64.workspace = true
 hex.workspace = true
 
+[dev-dependencies]
+tempfile.workspace = true
 [package.metadata.deb]
 name = "squish"
 maintainer = "Alex Lewontin <alex.c.lewontin@gmail.com>"

@@ -24,6 +24,7 @@ use quinn::Endpoint;
 use signature::Signer;
 
 use crate::config::ClientConfig;
+use crate::control::MasterConnection;
 use crate::known_hosts::KnownHosts;
 
 pub async fn connect(config: ClientConfig) -> Result<()> {
@@ -41,63 +42,28 @@ pub async fn connect(config: ClientConfig) -> Result<()> {
 }
 
 async fn connect_once(config: &ClientConfig) -> Result<()> {
-    // --- TLS setup ---
-    // Use aws-lc-rs provider (includes PQ key exchange via ML-KEM)
-    let provider = rustls::crypto::aws_lc_rs::default_provider();
+    if config.control_master {
+        let master = establish_connection(config).await?;
+        return crate::control::run_master(config.clone(), master).await;
+    }
 
-    let tls_config = rustls::ClientConfig::builder_with_provider(Arc::new(provider))
-        .with_protocol_versions(&[&rustls::version::TLS13])
-        .expect("TLS 1.3 config")
-        .dangerous()
-        .with_custom_certificate_verifier(Arc::new(SkipVerification))
-        .with_no_client_auth();
+    if (config.control_path_explicit
+        || config.control_master_auto
+        || config.control_persist.is_enabled())
+        && crate::control::run_via_master_or_spawn(config.clone()).await?
+    {
+        return Ok(());
+    }
 
-    let mut transport = quinn::TransportConfig::default();
-    transport.max_idle_timeout(Some(
-        Duration::from_secs(300).try_into().expect("valid timeout"),
-    ));
-    transport.keep_alive_interval(Some(Duration::from_secs(15)));
+    connect_direct(config).await
+}
 
-    let mut client_config = quinn::ClientConfig::new(Arc::new(
-        quinn::crypto::rustls::QuicClientConfig::try_from(tls_config)?,
-    ));
-    client_config.transport_config(Arc::new(transport));
-
-    // --- Connect ---
-    let addr: SocketAddr = format!("{}:{}", config.host, config.port)
-        .parse()
-        .or_else(|_| {
-            // Try DNS resolution
-            use std::net::ToSocketAddrs;
-            format!("{}:{}", config.host, config.port)
-                .to_socket_addrs()?
-                .next()
-                .ok_or_else(|| {
-                    std::io::Error::new(std::io::ErrorKind::NotFound, "DNS resolution failed")
-                })
-        })
-        .context("resolving server address")?;
-
-    let mut endpoint = Endpoint::client("0.0.0.0:0".parse()?)?;
-    endpoint.set_default_client_config(client_config);
-
-    let conn = endpoint.connect(addr, &config.host)?.await?;
-    tracing::info!("connected to {addr}");
-
-    // --- Host key verification (TOFU) ---
-    let server_cert_fingerprint = compute_cert_fingerprint(&conn);
-    let mut known_hosts = KnownHosts::load(&config.known_hosts_path)?;
-    let host_port = format!("{}:{}", config.host, config.port);
-    known_hosts.verify(&host_port, &hex::encode(server_cert_fingerprint))?;
-
-    // --- Authentication on stream 0 ---
-    let (send, recv) = conn.open_bi().await.context("opening control stream")?;
-    let mut control = FramedBiStream::new(send, recv);
-
-    authenticate(&mut control, config, &server_cert_fingerprint).await?;
-    tracing::info!("authenticated as {}", config.username);
-
-    // --- Start migration monitor ---
+async fn connect_direct(config: &ClientConfig) -> Result<()> {
+    let MasterConnection {
+        conn,
+        endpoint,
+        mut control,
+    } = establish_connection(config).await?;
     let _migration_handle = crate::migration::spawn_monitor(endpoint.clone());
 
     // --- Request remote port forwards (-R) via control stream ---
@@ -158,6 +124,70 @@ async fn connect_once(config: &ClientConfig) -> Result<()> {
     endpoint.wait_idle().await;
 
     Ok(())
+}
+
+async fn establish_connection(config: &ClientConfig) -> Result<MasterConnection> {
+    // --- TLS setup ---
+    // Use aws-lc-rs provider (includes PQ key exchange via ML-KEM)
+    let provider = rustls::crypto::aws_lc_rs::default_provider();
+
+    let tls_config = rustls::ClientConfig::builder_with_provider(Arc::new(provider))
+        .with_protocol_versions(&[&rustls::version::TLS13])
+        .expect("TLS 1.3 config")
+        .dangerous()
+        .with_custom_certificate_verifier(Arc::new(SkipVerification))
+        .with_no_client_auth();
+
+    let mut transport = quinn::TransportConfig::default();
+    transport.max_idle_timeout(Some(
+        Duration::from_secs(300).try_into().expect("valid timeout"),
+    ));
+    transport.keep_alive_interval(Some(Duration::from_secs(15)));
+
+    let mut client_config = quinn::ClientConfig::new(Arc::new(
+        quinn::crypto::rustls::QuicClientConfig::try_from(tls_config)?,
+    ));
+    client_config.transport_config(Arc::new(transport));
+
+    // --- Connect ---
+    let addr: SocketAddr = format!("{}:{}", config.host, config.port)
+        .parse()
+        .or_else(|_| {
+            // Try DNS resolution
+            use std::net::ToSocketAddrs;
+            format!("{}:{}", config.host, config.port)
+                .to_socket_addrs()?
+                .next()
+                .ok_or_else(|| {
+                    std::io::Error::new(std::io::ErrorKind::NotFound, "DNS resolution failed")
+                })
+        })
+        .context("resolving server address")?;
+
+    let mut endpoint = Endpoint::client("0.0.0.0:0".parse()?)?;
+    endpoint.set_default_client_config(client_config);
+
+    let conn = endpoint.connect(addr, &config.host)?.await?;
+    tracing::info!("connected to {addr}");
+
+    // --- Host key verification (TOFU) ---
+    let server_cert_fingerprint = compute_cert_fingerprint(&conn);
+    let mut known_hosts = KnownHosts::load(&config.known_hosts_path)?;
+    let host_port = format!("{}:{}", config.host, config.port);
+    known_hosts.verify(&host_port, &hex::encode(server_cert_fingerprint))?;
+
+    // --- Authentication on stream 0 ---
+    let (send, recv) = conn.open_bi().await.context("opening control stream")?;
+    let mut control = FramedBiStream::new(send, recv);
+
+    authenticate(&mut control, config, &server_cert_fingerprint).await?;
+    tracing::info!("authenticated as {}", config.username);
+
+    Ok(MasterConnection {
+        conn,
+        endpoint,
+        control,
+    })
 }
 
 /// Use the system `ssh` to append our ML-DSA-65 public key to the server's

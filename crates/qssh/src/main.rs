@@ -33,6 +33,17 @@ pub struct Cli {
     /// No shell: only set up port forwards and exit on Ctrl-C
     #[arg(short = 'N')]
     pub no_shell: bool,
+    /// Path to the local ControlMaster socket
+    #[arg(short = 'S', long, value_name = "PATH")]
+    pub control_path: Option<String>,
+
+    /// Become the ControlMaster for the configured target
+    #[arg(short = 'M', long)]
+    pub control_master: bool,
+
+    /// Keep a ControlMaster alive after clients disconnect (yes, no, 30s, 5m, 1h)
+    #[arg(long, value_name = "DURATION", num_args = 0..=1, default_missing_value = "yes")]
+    pub control_persist: Option<String>,
 
     /// Command to execute (if omitted, starts a shell)
     #[arg(trailing_var_arg = true)]
@@ -55,6 +66,9 @@ async fn main() -> Result<()> {
         &cli.local_forward,
         &cli.remote_forward,
         cli.no_shell,
+        cli.control_path.as_deref(),
+        cli.control_master,
+        cli.control_persist.as_deref(),
     )?;
 
     connection::connect(config).await

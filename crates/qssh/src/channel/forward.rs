@@ -1,4 +1,5 @@
 use std::net::SocketAddr;
+use std::sync::Arc;
 
 use anyhow::{Context, Result, bail};
 use qssh_core::proto::channel::*;
@@ -6,8 +7,10 @@ use qssh_core::transport::framing::FramedBiStream;
 use quinn::Connection;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::RwLock;
 
 use crate::config::ForwardSpec;
+pub type SharedForwardSpecs = Arc<RwLock<Vec<ForwardSpec>>>;
 
 // ---------------------------------------------------------------------------
 // Local forward (-L): listen locally, open DirectTcpip streams to the server.
@@ -95,6 +98,22 @@ pub async fn accept_remote_forward_streams(conn: Connection, specs: Vec<ForwardS
         };
         let specs = specs.clone();
         tokio::spawn(async move {
+            if let Err(e) = handle_remote_forward_stream(send, recv, specs).await {
+                tracing::warn!("remote forward stream error: {e}");
+            }
+        });
+    }
+}
+
+pub async fn accept_remote_forward_streams_shared(conn: Connection, specs: SharedForwardSpecs) {
+    loop {
+        let (send, recv) = match conn.accept_bi().await {
+            Ok(pair) => pair,
+            Err(_) => break,
+        };
+        let specs = specs.clone();
+        tokio::spawn(async move {
+            let specs = specs.read().await.clone();
             if let Err(e) = handle_remote_forward_stream(send, recv, specs).await {
                 tracing::warn!("remote forward stream error: {e}");
             }
