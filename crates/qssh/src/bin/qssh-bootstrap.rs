@@ -41,7 +41,12 @@ fn main() -> Result<()> {
         .init();
 
     let cli = Cli::parse();
+    let cfg = build_config(cli, std::env::var("HOME").ok().as_deref());
 
+    run(&cfg).context("bootstrap failed")
+}
+
+fn build_config(cli: Cli, home: Option<&str>) -> BootstrapConfig {
     // Parse user@host from target string.
     let (ssh_user, host) = if let Some((u, h)) = cli.target.split_once('@') {
         (Some(u.to_string()), h.to_string())
@@ -51,8 +56,8 @@ fn main() -> Result<()> {
     let ssh_user = ssh_user.or(cli.user);
 
     // Resolve identity and known_hosts paths.
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
-    let config_dir = PathBuf::from(&home).join(".config").join("qssh");
+    let home = home.unwrap_or("/tmp");
+    let config_dir = PathBuf::from(home).join(".config").join("qssh");
 
     let identity_path = cli
         .identity
@@ -60,7 +65,7 @@ fn main() -> Result<()> {
 
     let known_hosts_path = config_dir.join("known_hosts");
 
-    let cfg = BootstrapConfig {
+    BootstrapConfig {
         host,
         ssh_port: cli.ssh_port,
         qsshd_port: cli.qsshd_port,
@@ -68,7 +73,76 @@ fn main() -> Result<()> {
         squishd_version: cli.squishd_version,
         identity_path,
         known_hosts_path,
-    };
+    }
+}
 
-    run(&cfg).context("bootstrap failed")
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn target_user_takes_precedence_over_user_flag() {
+        let cli = Cli::try_parse_from([
+            "qssh-bootstrap",
+            "embedded@example.com",
+            "--ssh-port",
+            "2200",
+            "--qsshd-port",
+            "3300",
+            "-u",
+            "flag-user",
+        ])
+        .unwrap();
+
+        let cfg = build_config(cli, Some("/home/tester"));
+
+        assert_eq!(cfg.host, "example.com");
+        assert_eq!(cfg.ssh_user.as_deref(), Some("embedded"));
+        assert_eq!(cfg.ssh_port, 2200);
+        assert_eq!(cfg.qsshd_port, 3300);
+    }
+
+    #[test]
+    fn user_flag_is_used_when_target_has_no_user() {
+        let cli = Cli::try_parse_from(["qssh-bootstrap", "example.com", "-u", "deploy"]).unwrap();
+
+        let cfg = build_config(cli, Some("/home/tester"));
+
+        assert_eq!(cfg.host, "example.com");
+        assert_eq!(cfg.ssh_user.as_deref(), Some("deploy"));
+    }
+
+    #[test]
+    fn default_paths_are_resolved_under_home() {
+        let cli = Cli::try_parse_from(["qssh-bootstrap", "example.com"]).unwrap();
+
+        let cfg = build_config(cli, Some("/srv/home/alice"));
+
+        assert_eq!(
+            cfg.identity_path,
+            PathBuf::from("/srv/home/alice/.config/qssh/id_ml_dsa_65")
+        );
+        assert_eq!(
+            cfg.known_hosts_path,
+            PathBuf::from("/srv/home/alice/.config/qssh/known_hosts")
+        );
+    }
+
+    #[test]
+    fn explicit_identity_and_version_are_preserved() {
+        let cli = Cli::try_parse_from([
+            "qssh-bootstrap",
+            "example.com",
+            "--squishd-version",
+            "0.1.0",
+            "-i",
+            "/tmp/id_ml_dsa_65",
+        ])
+        .unwrap();
+
+        let cfg = build_config(cli, Some("/ignored"));
+
+        assert_eq!(cfg.squishd_version.as_deref(), Some("0.1.0"));
+        assert_eq!(cfg.identity_path, PathBuf::from("/tmp/id_ml_dsa_65"));
+    }
 }
