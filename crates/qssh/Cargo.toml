@@ -43,8 +43,7 @@ sha2.workspace = true
 # Encoding
 base64.workspace = true
 hex.workspace = true
-
-[dev-dependencies]
+minisign-verify = "0.2.5"
 tempfile.workspace = true
 [package.metadata.deb]
 name = "squish"

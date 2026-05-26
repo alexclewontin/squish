@@ -79,6 +79,38 @@ jobs:
           path: artifacts
           merge-multiple: true
 
+      - name: Generate signed checksums
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+        run: |
+          if [[ -z "${MINISIGN_SECRET_KEY}" ]]; then
+            echo "MINISIGN_SECRET_KEY secret is required for signed releases" >&2
+            exit 1
+          fi
+
+          printf '%s' "${MINISIGN_SECRET_KEY}" > minisign.key
+          chmod 600 minisign.key
+
+          (
+            cd artifacts
+            shopt -s nullglob
+            files=(squish-*.tar.gz *.deb)
+            if [[ ${#files[@]} -eq 0 ]]; then
+              echo "no release artifacts found to checksum" >&2
+              exit 1
+            fi
+            sha256sum "${files[@]}" > SHA256SUMS
+          )
+
+          docker run --rm -i \
+            -v "$PWD/artifacts:/work" \
+            -v "$PWD/minisign.key:/minisign.key:ro" \
+            -w /work \
+            jedisct1/minisign \
+            -S -s /minisign.key -m SHA256SUMS -x SHA256SUMS.minisig \
+            -t "squish release checksums"
+
+          rm -f minisign.key
       - uses: softprops/action-gh-release@v3
         with:
           files: artifacts/**
