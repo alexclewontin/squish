@@ -25,7 +25,6 @@ class Squish < Formula
       port = 2222
       host_key = "#{etc}/sqsh/host.key"
       host_cert = "#{etc}/sqsh/host.cert"
-      authorized_keys = "#{etc}/sqsh/authorized_keys"
     EOS
   end
 
@@ -40,7 +39,8 @@ class Squish < Formula
   test do
     assert_match "SQSH client", shell_output("#{bin}/sqsh --help")
     assert_match "SQSH server daemon", shell_output("#{bin}/sqshd --help")
-    assert_match "sqsh-keygen", shell_output("#{bin}/sqsh-keygen --help")
-    assert_match "sqsh-bootstrap", shell_output("#{bin}/sqsh-bootstrap --help")
+    assert_match "ML-DSA-65", shell_output("#{bin}/sqsh-keygen --help")
+    assert_match "Bootstrap", shell_output("#{bin}/sqsh-bootstrap --help")
+    assert_match "scp-like file copy", shell_output("#{bin}/sqcp --help")
+    assert_match "Interactive SFTP", shell_output("#{bin}/sqftp --help")
   end
-end
