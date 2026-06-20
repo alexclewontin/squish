@@ -5,6 +5,7 @@ pub mod connection;
 pub mod control;
 pub mod known_hosts;
 pub mod migration;
+pub mod sftp;
 pub mod target;
 
 pub mod channel {
