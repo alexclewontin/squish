@@ -1,0 +1,66 @@
+[package]
+name = "sqsh"
+version.workspace = true
+edition.workspace = true
+description = "Post-quantum SSH client over QUIC"
+
+[dependencies]
+sqsh-core.workspace = true
+
+# QUIC / TLS
+quinn.workspace = true
+rustls.workspace = true
+
+# Async
+tokio.workspace = true
+tokio-util.workspace = true
+
+# Terminal
+crossterm = "0.28"
+
+# Network change detection
+if-watch = { version = "3", features = ["tokio"] }
+
+# CLI / config
+clap.workspace = true
+toml.workspace = true
+serde.workspace = true
+
+# Logging
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+# Error handling
+anyhow.workspace = true
+
+# Crypto (for auth signing)
+ml-dsa.workspace = true
+signature.workspace = true
+rand.workspace = true
+zeroize.workspace = true
+sha2.workspace = true
+
+# Encoding
+base64.workspace = true
+hex.workspace = true
+minisign-verify = "0.2.5"
+tempfile.workspace = true
+
+# SFTP file transfer (over the sftp subsystem; works over an arbitrary byte stream)
+openssh-sftp-client = "0.15.7"
+futures-util = "0.3"
+bytes = "1"
+[package.metadata.deb]
+name = "squish"
+maintainer = "Alex Lewontin <alex.c.lewontin@gmail.com>"
+copyright = "2026, Alex Lewontin"
+section = "net"
+priority = "optional"
+depends = "$auto"
+assets = [
+  ["target/release/sqsh", "usr/bin/sqsh", "755"],
+  ["target/release/sqsh-bootstrap", "usr/bin/sqsh-bootstrap", "755"],
+  ["target/release/sqsh-keygen", "usr/bin/sqsh-keygen", "755"],
+  ["target/release/sqcp", "usr/bin/sqcp", "755"],
+  ["target/release/sqftp", "usr/bin/sqftp", "755"],
+]

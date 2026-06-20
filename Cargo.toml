@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/qssh-core", "crates/qsshd", "crates/qssh"]
+members = ["crates/sqsh-core", "crates/sqshd", "crates/sqsh"]
 
 [workspace.package]
 version = "0.1.1"
@@ -53,4 +53,4 @@ tempfile = "3"
 assert_matches = "1.5"
 
 # Shared internal crate
-qssh-core = { path = "crates/qssh-core" }
+sqsh-core = { path = "crates/sqsh-core" }

@@ -1,0 +1,40 @@
+[package]
+name = "sqsh-core"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+# QUIC (for stream types in transport layer)
+quinn.workspace = true
+
+# Post-quantum auth
+ml-dsa.workspace = true
+signature.workspace = true
+
+# Crypto utilities
+sha2.workspace = true
+rand.workspace = true
+zeroize.workspace = true
+
+# Serialization
+serde.workspace = true
+postcard.workspace = true
+
+# Async
+tokio.workspace = true
+
+# Logging
+tracing.workspace = true
+
+# Encoding
+base64.workspace = true
+
+# Error handling
+thiserror.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util", "macros", "io-util"] }
+tempfile.workspace = true
+assert_matches.workspace = true
+rcgen = "0.13"
+rustls.workspace = true
