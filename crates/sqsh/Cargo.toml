@@ -50,17 +50,3 @@ tempfile.workspace = true
 openssh-sftp-client = "0.15.7"
 futures-util = "0.3"
 bytes = "1"
-[package.metadata.deb]
-name = "squish"
-maintainer = "Alex Lewontin <alex.c.lewontin@gmail.com>"
-copyright = "2026, Alex Lewontin"
-section = "net"
-priority = "optional"
-depends = "$auto"
-assets = [
-  ["target/release/sqsh", "usr/bin/sqsh", "755"],
-  ["target/release/sqsh-bootstrap", "usr/bin/sqsh-bootstrap", "755"],
-  ["target/release/sqsh-keygen", "usr/bin/sqsh-keygen", "755"],
-  ["target/release/sqcp", "usr/bin/sqcp", "755"],
-  ["target/release/sqftp", "usr/bin/sqftp", "755"],
-]

@@ -30,7 +30,7 @@ override_dh_auto_install:
 	install -D -m 0755 target/release/sqcp             debian/squish/usr/bin/sqcp
 	install -D -m 0755 target/release/sqftp            debian/squish/usr/bin/sqftp
 	install -D -m 0755 target/release/sqshd            debian/squishd/usr/bin/sqshd
-	install -D -m 0644 packaging/debian/sqshd.toml     debian/squishd/etc/sqsh/sqshd.toml
+	install -D -m 0644 debian/sqshd.toml               debian/squishd/etc/sqsh/sqshd.toml
 
 override_dh_clean:
 	dh_clean

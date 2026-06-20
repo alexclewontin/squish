@@ -42,18 +42,3 @@ signature.workspace = true
 # Encoding / cert parsing
 rustls-pemfile.workspace = true
 hex.workspace = true
-
-[package.metadata.deb]
-name = "squishd"
-maintainer = "Alex Lewontin <alex.c.lewontin@gmail.com>"
-copyright = "2026, Alex Lewontin"
-section = "net"
-priority = "optional"
-depends = "$auto"
-conf-files = ["/etc/sqsh/sqshd.toml"]
-maintainer-scripts = "../../packaging/debian/scripts"
-assets = [
-  ["target/release/sqshd", "usr/bin/sqshd", "755"],
-  ["../../packaging/debian/sqshd.service", "lib/systemd/system/sqshd.service", "644"],
-  ["../../packaging/debian/sqshd.toml", "etc/sqsh/sqshd.toml", "644"],
-]
