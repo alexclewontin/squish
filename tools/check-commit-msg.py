@@ -8,7 +8,7 @@ TYPES = {
     "feat", "fix", "docs", "style", "refactor",
     "test", "chore", "ci", "perf", "revert", "build",
 }
-SCOPES = {"qssh", "qsshd", "core", "bootstrap", "keygen", "packaging", "ci"}
+SCOPES = {"sqsh", "sqshd", "core", "bootstrap", "keygen", "packaging", "ci"}
 
 PATTERN = re.compile(r"^(?P<type>\w+)\((?P<scope>[^)]+)\)(?P<breaking>!)?:\s+\S")
 

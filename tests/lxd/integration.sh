@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# End-to-end test of qsshd auth, privilege drop, and sudo behaviour.
+# End-to-end test of sqshd auth, privilege drop, and sudo behaviour.
 #
 # Spins up a fresh LXD container, installs the locally-built binaries,
 # creates a non-sudoer (alice) and a sudoer (bob), and runs the four
@@ -53,7 +53,7 @@ if [[ -z "${SQUISH_SKIP_BUILD:-}" ]]; then
   (cd "$WORKSPACE" && cargo build --release --workspace --quiet)
 fi
 
-for bin in qssh qsshd qssh-keygen; do
+for bin in sqsh sqshd sqsh-keygen; do
   if [[ ! -x "$WORKSPACE/target/release/$bin" ]]; then
     echo "missing binary: target/release/$bin (set SQUISH_SKIP_BUILD only when binaries exist)" >&2
     exit 2
@@ -74,7 +74,7 @@ done
 
 # --- Install binaries ---
 log "installing binaries"
-for bin in qssh qsshd qssh-keygen; do
+for bin in sqsh sqshd sqsh-keygen; do
   lxc file push --mode 755 "$WORKSPACE/target/release/$bin" "$CONTAINER/usr/local/bin/$bin"
 done
 
@@ -90,9 +90,9 @@ setup_user() {
   local user="$1"
   lxc exec "$CONTAINER" -- runuser -u "$user" -- bash -c '
     set -e
-    mkdir -p ~/.config/qssh ~/.squish
-    chmod 700 ~/.config/qssh ~/.squish
-    qssh-keygen -f ~/.config/qssh/id_ml_dsa_65 > ~/key.pub
+    mkdir -p ~/.config/sqsh ~/.squish
+    chmod 700 ~/.config/sqsh ~/.squish
+    sqsh-keygen -f ~/.config/sqsh/id_ml_dsa_65 > ~/key.pub
     cp ~/key.pub ~/.squish/authorized_keys
     chmod 600 ~/.squish/authorized_keys
   '
@@ -101,19 +101,19 @@ log "generating keys and ~/.squish/authorized_keys for alice and bob"
 setup_user alice
 setup_user bob
 
-# --- Start qsshd as root ---
-log "starting qsshd on 127.0.0.1:2222"
-lxc exec "$CONTAINER" -- mkdir -p /etc/qssh
-lxc exec "$CONTAINER" -- bash -c 'cat > /etc/qssh/qsshd.toml <<EOF
+# --- Start sqshd as root ---
+log "starting sqshd on 127.0.0.1:2222"
+lxc exec "$CONTAINER" -- mkdir -p /etc/sqsh
+lxc exec "$CONTAINER" -- bash -c 'cat > /etc/sqsh/sqshd.toml <<EOF
 bind_addr = "127.0.0.1"
 port = 2222
-host_key = "/etc/qssh/host.key"
-host_cert = "/etc/qssh/host.cert"
+host_key = "/etc/sqsh/host.key"
+host_cert = "/etc/sqsh/host.cert"
 EOF'
 lxc exec "$CONTAINER" -- bash -c \
-  'nohup /usr/local/bin/qsshd --config /etc/qssh/qsshd.toml >/var/log/qsshd.log 2>&1 &'
+  'nohup /usr/local/bin/sqshd --config /etc/sqsh/sqshd.toml >/var/log/sqshd.log 2>&1 &'
 
-# Wait for qsshd to bind 2222.
+# Wait for sqshd to bind 2222.
 for _ in $(seq 1 40); do
   if lxc exec "$CONTAINER" -- bash -c 'ss -ltn 2>/dev/null | grep -q ":2222 "'; then
     break
@@ -121,8 +121,8 @@ for _ in $(seq 1 40); do
   sleep 0.25
 done
 if ! lxc exec "$CONTAINER" -- bash -c 'ss -ltn 2>/dev/null | grep -q ":2222 "'; then
-  echo "qsshd never bound 2222. Log:" >&2
-  lxc exec "$CONTAINER" -- cat /var/log/qsshd.log >&2 || true
+  echo "sqshd never bound 2222. Log:" >&2
+  lxc exec "$CONTAINER" -- cat /var/log/sqshd.log >&2 || true
   exit 1
 fi
 
@@ -137,7 +137,7 @@ as_user() {
 echo
 
 log "Test 1: alice logs in as alice (whoami must be alice)"
-out=$(as_user alice 'qssh -p 2222 alice@127.0.0.1 whoami' 2>&1 || true)
+out=$(as_user alice 'sqsh -p 2222 alice@127.0.0.1 whoami' 2>&1 || true)
 if grep -qx 'alice' <<<"$out"; then
   pass_test "alice -> alice yields whoami=alice"
 else
@@ -145,21 +145,21 @@ else
 fi
 
 log "Test 2: alice cannot log in as bob"
-if as_user alice 'qssh -p 2222 bob@127.0.0.1 whoami' >/dev/null 2>&1; then
-  fail_test "expected auth failure, but qssh succeeded"
+if as_user alice 'sqsh -p 2222 bob@127.0.0.1 whoami' >/dev/null 2>&1; then
+  fail_test "expected auth failure, but sqsh succeeded"
 else
   pass_test "alice -> bob denied"
 fi
 
 log "Test 3: alice (non-sudoer) cannot sudo"
-if as_user alice 'qssh -p 2222 alice@127.0.0.1 sudo -n true' >/dev/null 2>&1; then
+if as_user alice 'sqsh -p 2222 alice@127.0.0.1 sudo -n true' >/dev/null 2>&1; then
   fail_test "alice's sudo unexpectedly succeeded"
 else
   pass_test "alice's sudo denied"
 fi
 
 log "Test 4: bob (sudoer NOPASSWD) can sudo"
-out=$(as_user bob 'qssh -p 2222 bob@127.0.0.1 sudo -n whoami' 2>&1 || true)
+out=$(as_user bob 'sqsh -p 2222 bob@127.0.0.1 sudo -n whoami' 2>&1 || true)
 if grep -qx 'root' <<<"$out"; then
   pass_test "bob -> root via sudo"
 else

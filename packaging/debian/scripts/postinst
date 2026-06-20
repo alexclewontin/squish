@@ -5,13 +5,13 @@ case "$1" in
     configure)
         # Create config dir if missing (dpkg installs the file, but the dir may
         # already exist from a previous install or manual setup).
-        install -d -m 755 /etc/qssh
+        install -d -m 755 /etc/sqsh
 
         # Enable and start the service if systemd is running.
         if [ -d /run/systemd/system ]; then
             systemctl daemon-reload
-            systemctl enable qsshd.service
-            systemctl start qsshd.service || true
+            systemctl enable sqshd.service
+            systemctl start sqshd.service || true
         fi
         ;;
     abort-upgrade|abort-remove|abort-deconfigure)

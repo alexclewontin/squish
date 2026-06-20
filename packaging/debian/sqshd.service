@@ -1,9 +1,9 @@
 [Unit]
-Description=QSSH daemon
+Description=SQSH daemon
 After=network.target
 
 [Service]
-ExecStart=/usr/bin/qsshd --config /etc/qssh/qsshd.toml
+ExecStart=/usr/bin/sqshd --config /etc/sqsh/sqshd.toml
 Restart=on-failure
 RestartSec=5
 

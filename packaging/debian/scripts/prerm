@@ -4,8 +4,8 @@ set -e
 case "$1" in
     remove|upgrade|deconfigure)
         if [ -d /run/systemd/system ]; then
-            systemctl stop qsshd.service || true
-            systemctl disable qsshd.service || true
+            systemctl stop sqshd.service || true
+            systemctl disable sqshd.service || true
         fi
         ;;
     failed-upgrade)

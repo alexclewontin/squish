@@ -12,34 +12,35 @@ class Squish < Formula
   depends_on "rust" => :build
 
   def install
-    # Install client binaries (qssh + qssh-bootstrap)
-    system "cargo", "install", *std_cargo_args(path: "crates/qssh")
-    # Install server daemon (qsshd)
-    system "cargo", "install", *std_cargo_args(path: "crates/qsshd")
+    # Install client binaries (sqsh, sqsh-keygen, sqsh-bootstrap)
+    system "cargo", "install", *std_cargo_args(path: "crates/sqsh")
+    # Install server daemon (sqshd)
+    system "cargo", "install", *std_cargo_args(path: "crates/sqshd")
 
-    # Install a default qsshd config into #{etc}/qssh/ on first install.
-    (etc/"qssh").mkpath
-    config = etc/"qssh/qsshd.toml"
+    # Install a default sqshd config into #{etc}/sqsh/ on first install.
+    (etc/"sqsh").mkpath
+    config = etc/"sqsh/sqshd.toml"
     config.write <<~EOS unless config.exist?
       bind_addr = "0.0.0.0"
       port = 2222
-      host_key = "#{etc}/qssh/host.key"
-      host_cert = "#{etc}/qssh/host.cert"
-      authorized_keys = "#{etc}/qssh/authorized_keys"
+      host_key = "#{etc}/sqsh/host.key"
+      host_cert = "#{etc}/sqsh/host.cert"
+      authorized_keys = "#{etc}/sqsh/authorized_keys"
     EOS
   end
 
-  # `brew services start squish` runs qsshd as a launchd daemon.
+  # `brew services start squish` runs sqshd as a launchd daemon.
   service do
-    run [opt_bin/"qsshd", "--config", etc/"qssh/qsshd.toml"]
+    run [opt_bin/"sqshd", "--config", etc/"sqsh/sqshd.toml"]
     keep_alive true
-    log_path var/"log/qsshd.log"
-    error_log_path var/"log/qsshd.log"
+    log_path var/"log/sqshd.log"
+    error_log_path var/"log/sqshd.log"
   end
 
   test do
-    assert_match "QSSH client", shell_output("#{bin}/qssh --help")
-    assert_match "QSSH server daemon", shell_output("#{bin}/qsshd --help")
-    assert_match "qssh-bootstrap", shell_output("#{bin}/qssh-bootstrap --help")
+    assert_match "SQSH client", shell_output("#{bin}/sqsh --help")
+    assert_match "SQSH server daemon", shell_output("#{bin}/sqshd --help")
+    assert_match "sqsh-keygen", shell_output("#{bin}/sqsh-keygen --help")
+    assert_match "sqsh-bootstrap", shell_output("#{bin}/sqsh-bootstrap --help")
   end
 end
