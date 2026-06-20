@@ -41,6 +41,7 @@ sqsh-keygen -y -f /path/to/id_ml_dsa_65
 - creates new key files as mode `0600` on Unix from the initial open,
 - rejects key files that are accessible by group/other,
 - prints a Squish authorized-keys line suitable for `~/.squish/authorized_keys`.
+
 ## `sqsh-bootstrap`
 
 `sqsh-bootstrap` installs and starts `sqshd` on a remote host by using an existing traditional SSH connection for the first hop.
@@ -79,6 +80,7 @@ On the local machine:
 
 - uses or creates `~/.config/sqsh/id_ml_dsa_65` unless overridden (directory `0700`, key file `0600` on Unix),
 - updates `~/.config/sqsh/known_hosts` (rejects group/other-accessible files on load; saved as `0600` on Unix).
+
 On the remote machine:
 
 - installs the `sqshd` binary,

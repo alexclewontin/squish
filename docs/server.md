@@ -61,6 +61,7 @@ accept_env = ["LANG", "LC_*"]
 [subsystems]
 sftp = "/usr/lib/openssh/sftp-server"
 ```
+
 ## Host key and certificate files
 
 When `host_key`/`host_cert` do not exist, `sqshd` generates them at startup.

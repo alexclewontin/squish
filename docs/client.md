@@ -63,6 +63,7 @@ The client uses trust-on-first-use pinning for the server TLS certificate finger
 - first contact records the presented fingerprint,
 - later changes are rejected until the pin is updated manually,
 - group/other-accessible `known_hosts` files are rejected on Unix.
+
 This is not OpenSSH host-key parsing; it is Squish-specific fingerprint storage.
 
 ## Connection migration
@@ -169,6 +170,7 @@ This binds the proof to:
 - the server certificate fingerprint,
 - the user name (length-prefixed),
 - the challenge nonce.
+
 If public-key authentication is rejected, the client currently has a fallback path that uses the system `ssh` binary to append the generated public key to the remote user's `~/.squish/authorized_keys`, then retries.
 
 ## File transfer
@@ -196,7 +198,7 @@ Interactive client, like OpenSSH `sftp`:
 sqftp [-i identity] [-P port] [user@]host
 ```
 
-Commands: `ls`, `cd`, `pwd`, `get`, `put`, `mkdir`, `rmdir`, `rm`, `rename`, local `lls`/`lcd`/`lpwd`, `help`, and `quit`. A failed command reports the error and keeps the session open.
+Commands: `ls`, `cd`, `pwd`, `get`, `put`, `mkdir`, `rmdir`, `rm`, `rename`, local `lls`/`lcd`/`lpwd`, `help`, and `quit` (also `exit`/`bye`). A failed command reports the error and keeps the session open.
 
 Both require an `sftp-server` binary on the server; `sqshd` auto-detects the common locations or honors an explicit `[subsystems]` entry.
 
