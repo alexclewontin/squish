@@ -2,10 +2,10 @@
 
 ## CLI surface
 
-`qsshd` currently supports:
+`sqshd` currently supports:
 
 ```text
-qsshd [OPTIONS]
+sqshd [OPTIONS]
 ```
 
 Options:
@@ -16,7 +16,7 @@ Options:
 Default config path:
 
 ```text
-/etc/qssh/qsshd.toml
+/etc/sqsh/sqshd.toml
 ```
 
 ## Configuration file
@@ -33,14 +33,16 @@ Current fields:
 - `remote_forward_allowlist` — default `[]`; exact-match `"bind_addr:bind_port"` exceptions for non-loopback remote forwards
 - `max_channels_per_connection` — default `32`
 - `max_remote_forwards_per_connection` — default `8`
+- `accept_env` — default `["LANG", "LC_*"]`; client environment variables the server applies (exact name or trailing-`*` prefix), set before the fixed identity env so identity always wins
+- `subsystems` — default `{}`; map of subsystem name to command line. `sftp` is auto-detected from common `sftp-server` paths when not configured
 
 Minimal example:
 
 ```toml
 bind_addr = "0.0.0.0"
 port = 2222
-host_key = "/etc/qssh/host.key"
-host_cert = "/etc/qssh/host.cert"
+host_key = "/etc/sqsh/host.key"
+host_cert = "/etc/sqsh/host.cert"
 
 # Deny-by-default for direct-tcpip; add exact host:port entries to permit.
 direct_tcpip_allowlist = ["127.0.0.1:5432"]
@@ -51,13 +53,20 @@ remote_forward_allowlist = ["0.0.0.0:22222"]
 # Per authenticated connection.
 max_channels_per_connection = 32
 max_remote_forwards_per_connection = 8
+
+# Environment variables accepted from the client (exact name or trailing-* prefix).
+accept_env = ["LANG", "LC_*"]
+
+# Subsystems: name -> command line. `sftp` auto-detects sftp-server when omitted.
+[subsystems]
+sftp = "/usr/lib/openssh/sftp-server"
 ```
 ## Host key and certificate files
 
-When `host_key`/`host_cert` do not exist, `qsshd` generates them at startup.
+When `host_key`/`host_cert` do not exist, `sqshd` generates them at startup.
 
 On Unix:
-- the parent directory is created with mode `0700` when `qsshd` creates it,
+- the parent directory is created with mode `0700` when `sqshd` creates it,
 - the new private key file is created owner-only with mode `0600` from first open (no write-then-chmod window).
 
 
@@ -73,7 +82,7 @@ For user authentication the server:
 - receives `ClientHello`,
 - sends a random challenge nonce,
 - checks the presented public key against the target user's `~/.squish/authorized_keys`,
-- rebuilds the signed challenge payload (`SHA-512("qssh-auth-challenge-v1" || nonce || server_cert_fingerprint || username_len_le_u16 || username_bytes)`),
+- rebuilds the signed challenge payload (`SHA-512("sqsh-auth-challenge-v1" || nonce || server_cert_fingerprint || username_len_le_u16 || username_bytes)`),
 - verifies the ML-DSA-65 signature,
 - only then opens the session.
 
@@ -97,6 +106,8 @@ Session channels support:
 - PTY allocation,
 - interactive shells,
 - remote exec requests,
+- subsystem requests (no PTY; stderr returned as extended data),
+- allow-listed environment variables (locale by default),
 - window-size changes,
 - signals,
 - stdout/stderr separation,
@@ -153,7 +164,7 @@ Over-limit opens are rejected with channel open failure.
 
 ## Operational notes
 
-- `qsshd` is packaged to run as a service.
-- Debian packaging includes a `qsshd.service` unit.
+- `sqshd` is packaged to run as a service.
+- Debian packaging includes a `sqshd.service` unit.
 - Homebrew packaging exposes a `brew services` definition.
-- `qssh-bootstrap` writes the config, installs service files, starts the daemon, and records the certificate fingerprint locally.
+- `sqsh-bootstrap` writes the config, installs service files, starts the daemon, and records the certificate fingerprint locally.

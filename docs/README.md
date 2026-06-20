@@ -1,14 +1,14 @@
-# Squish documentation
+# SQUISH
 
-This directory documents the project as it exists today.
+SQUISH (Secure QUIC Shell) is an SSH-like remote access system built on QUIC instead of TCP.
 
 ## Components
 
-- `qssh` — the interactive and non-interactive client.
-- `qsshd` — the QUIC-based server daemon.
-- `qssh-keygen` — ML-DSA-65 key generation and public-key export.
-- `qssh-bootstrap` — remote installer for `qsshd` over an existing SSH connection.
-- `qssh-core` — shared protocol, framing, and authentication types.
+- `sqsh` — the interactive and non-interactive client.
+- `sqshd` — the QUIC-based server daemon.
+- `sqsh-keygen` — ML-DSA-65 key generation and public-key export.
+- `sqsh-bootstrap` — remote installer for `sqshd` over an existing SSH connection.
+- `sqsh-core` — shared protocol, framing, and authentication types.
 
 ## Feature map
 
@@ -34,13 +34,13 @@ Squish is an SSH-like remote access system built on QUIC instead of TCP. The cur
 
 Client-side defaults:
 
-- identity: `~/.config/qssh/id_ml_dsa_65`
-- known hosts: `~/.config/qssh/known_hosts`
-- generated control sockets: `~/.config/qssh/control/`
+- identity: `~/.config/sqsh/id_ml_dsa_65`
+- known hosts: `~/.config/sqsh/known_hosts`
+- generated control sockets: `~/.config/sqsh/control/`
 
 Server-side defaults:
 
 - listen address: `0.0.0.0`
 - listen port: `2222`
-- sample config path: `/etc/qssh/qsshd.toml`
+- sample config path: `/etc/sqsh/sqshd.toml`
 - authorized keys path per user: `~/.squish/authorized_keys`

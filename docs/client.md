@@ -2,10 +2,10 @@
 
 ## CLI surface
 
-`qssh` currently supports:
+`sqsh` currently supports:
 
 ```text
-qssh [OPTIONS] <TARGET> [COMMAND]...
+sqsh [OPTIONS] <TARGET> [COMMAND]...
 ```
 
 Important options:
@@ -16,10 +16,11 @@ Important options:
 - `-L <SPEC>` — local TCP forwarding.
 - `-R <SPEC>` — remote TCP forwarding.
 - `-N` — set up forwarding only; do not start a shell.
+- `-s, --subsystem <NAME>` — invoke a subsystem (e.g. `sftp`) instead of a shell or command.
 - `-S, --control-path <PATH>` — choose the local control socket path.
 - `-M, --control-master` — run as the local master for that target.
 - `--control-persist [DURATION]` — keep a master alive after client sessions disconnect.
-- `--ssh-port <PORT>` — SSH port to use if qssh must fall back to installing your public key over SSH.
+- `--ssh-port <PORT>` — SSH port to use if sqsh must fall back to installing your public key over SSH.
 
 Target format:
 
@@ -28,13 +29,16 @@ Target format:
 
 ## Session modes
 
-`qssh` supports three main client modes:
+`sqsh` supports four main client modes:
 
 1. interactive shell when no command is given,
 2. remote exec when a command is given,
 3. forwarding-only mode with `-N`.
+4. subsystem mode with `-s NAME` (e.g. `sftp`), run without a PTY.
 
 Interactive sessions request a PTY, enable raw mode locally, propagate window-size changes, and restore cooked terminal mode on exit.
+
+Locale environment variables (`LANG` and `LC_*`) are forwarded to the remote session so terminal programs render correctly; the server applies them only if they pass its `accept_env` allow-list.
 
 ## Port forwarding
 
@@ -54,7 +58,7 @@ The client asks the server to listen remotely. Each accepted TCP connection is c
 
 The client uses trust-on-first-use pinning for the server TLS certificate fingerprint.
 
-- pins are stored in `~/.config/qssh/known_hosts`,
+- pins are stored in `~/.config/sqsh/known_hosts`,
 - keys are stored by `host:port`,
 - first contact records the presented fingerprint,
 - later changes are rejected until the pin is updated manually,
@@ -83,17 +87,17 @@ The client has a local master/slave model backed by a Unix-domain control socket
 Use `-M` to run a master process for a target:
 
 ```text
-qssh -M target
+sqsh -M target
 ```
 
 That process owns one authenticated QUIC connection and serves later local client requests through the control socket.
 
 ### Control path
 
-Use `-S` to choose the control socket path explicitly. If not set, `qssh` generates a short hashed path under:
+Use `-S` to choose the control socket path explicitly. If not set, `sqsh` generates a short hashed path under:
 
 ```text
-~/.config/qssh/control/
+~/.config/sqsh/control/
 ```
 
 ### ControlPersist
@@ -105,7 +109,7 @@ Use `-S` to choose the control socket path explicitly. If not set, `qssh` genera
 - raw seconds, for example `300`
 - suffixed durations like `30s`, `5m`, `1h`
 
-When enabled, `qssh` can start and reuse a background master automatically and keep it alive after client sessions disconnect.
+When enabled, `sqsh` can start and reuse a background master automatically and keep it alive after client sessions disconnect.
 
 ### Current supported behavior from ssh config
 
@@ -158,7 +162,7 @@ User authentication is based on an ML-DSA-65 keypair derived from a 32-byte seed
 
 The client signs a server challenge payload defined as:
 
-- `SHA-512("qssh-auth-challenge-v1" || nonce || server_cert_fingerprint || username_len_le_u16 || username_bytes)`
+- `SHA-512("sqsh-auth-challenge-v1" || nonce || server_cert_fingerprint || username_len_le_u16 || username_bytes)`
 
 This binds the proof to:
 
@@ -167,34 +171,69 @@ This binds the proof to:
 - the challenge nonce.
 If public-key authentication is rejected, the client currently has a fallback path that uses the system `ssh` binary to append the generated public key to the remote user's `~/.squish/authorized_keys`, then retries.
 
+## File transfer
+
+Two companion binaries move files over the same authenticated QUIC transport, using the server's `sftp` subsystem (the daemon execs the OS `sftp-server`).
+
+### `sqcp`
+
+scp-style one-shot copy. Exactly one of source/destination is remote, written `[user@]host:path`:
+
+```text
+sqcp [-r] [-i identity] [-P port] <src> <dst>
+```
+
+- upload: `sqcp ./local.txt alice@example.com:/srv/local.txt`
+- download: `sqcp alice@example.com:/srv/data.bin ./data.bin`
+- recursive directory copy with `-r`
+- if the destination is an existing directory, the source basename is appended
+
+### `sqftp`
+
+Interactive client, like OpenSSH `sftp`:
+
+```text
+sqftp [-i identity] [-P port] [user@]host
+```
+
+Commands: `ls`, `cd`, `pwd`, `get`, `put`, `mkdir`, `rmdir`, `rm`, `rename`, local `lls`/`lcd`/`lpwd`, `help`, and `quit`. A failed command reports the error and keeps the session open.
+
+Both require an `sftp-server` binary on the server; `sqshd` auto-detects the common locations or honors an explicit `[subsystems]` entry.
+
 ## Examples
 
 Interactive shell:
 
 ```text
-qssh alice@example.com
+sqsh alice@example.com
 ```
 
 Run one command:
 
 ```text
-qssh alice@example.com uname -a
+sqsh alice@example.com uname -a
+```
+
+Invoke the raw `sftp` subsystem directly (normally you would use `sqftp`/`sqcp` instead — see File transfer above):
+
+```text
+sqsh -s sftp alice@example.com
 ```
 
 Local forwarding only:
 
 ```text
-qssh -N -L 15432:127.0.0.1:5432 alice@example.com
+sqsh -N -L 15432:127.0.0.1:5432 alice@example.com
 ```
 
 Remote forwarding:
 
 ```text
-qssh -R 8080:127.0.0.1:8080 alice@example.com
+sqsh -R 8080:127.0.0.1:8080 alice@example.com
 ```
 
 Start a master and keep it around for five minutes after the last client disconnects:
 
 ```text
-qssh -M --control-persist 5m alice@example.com
+sqsh -M --control-persist 5m alice@example.com
 ```

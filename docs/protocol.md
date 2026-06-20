@@ -9,7 +9,7 @@ Current layout per connection:
 - the first bidirectional stream is the control stream,
 - each later bidirectional stream carries one logical channel.
 
-The shared `qssh-core` crate contains:
+The shared `sqsh-core` crate contains:
 
 - postcard-based message framing,
 - control-stream message types,
@@ -58,7 +58,7 @@ The current handshake is:
 
 The challenge payload is:
 
-- `SHA-512("qssh-auth-challenge-v1" || nonce || server_cert_fingerprint || username_len_le_u16 || username_bytes)`
+- `SHA-512("sqsh-auth-challenge-v1" || nonce || server_cert_fingerprint || username_len_le_u16 || username_bytes)`
 
 This binds the proof to:
 
@@ -80,7 +80,7 @@ Current channel messages include:
 - open/open-confirm/open-failure lifecycle messages,
 - raw `Data`,
 - `ExtendedData` for stderr-like streams,
-- request messages such as PTY, shell, exec, signal, and window change,
+- request messages such as PTY, shell, exec, subsystem, env, signal, and window change,
 - `ExitStatus` and `ExitSignal`,
 - `Eof` and `Close`.
 
@@ -90,6 +90,8 @@ A session channel is used for:
 
 - interactive shells,
 - exec requests,
+- subsystem requests (e.g. `sftp`), run without a PTY with stderr returned as extended data,
+- environment passing (server-side allow-listed, locale variables by default),
 - PTY-backed terminal sessions,
 - signal delivery,
 - exit reporting.
