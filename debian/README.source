@@ -4,12 +4,7 @@ squish for Debian
 Rust version requirement
 ------------------------
 Cargo.toml uses edition = "2024", which requires rustc >= 1.85.
-Ubuntu 24.04 (noble) ships rustc 1.75 and cannot build this package without
-a newer compiler.  Add the upstream Rust PPA before building:
-
-    sudo add-apt-repository ppa:rust-lang/stable
-    sudo apt-get update
-    sudo apt-get install rustc cargo
+Ubuntu 26.04 (resolute) ships rustc 1.93.1 which satisfies this.
 
 Producing the orig tarball
 --------------------------
