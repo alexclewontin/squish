@@ -1,0 +1,5 @@
+squish (0.1.1-1) unstable; urgency=medium
+
+  * Initial Debian packaging.
+
+ -- Alex Lewontin <alex.c.lewontin@gmail.com>  Fri, 20 Jun 2026 12:00:00 +0000

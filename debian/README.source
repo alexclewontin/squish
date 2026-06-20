@@ -1,0 +1,43 @@
+squish for Debian
+=================
+
+Rust version requirement
+------------------------
+Cargo.toml uses edition = "2024", which requires rustc >= 1.85.
+Ubuntu 24.04 (noble) ships rustc 1.75 and cannot build this package without
+a newer compiler.  Add the upstream Rust PPA before building:
+
+    sudo add-apt-repository ppa:rust-lang/stable
+    sudo apt-get update
+    sudo apt-get install rustc cargo
+
+Producing the orig tarball
+--------------------------
+The source package must include a pre-vendored copy of all Cargo dependencies
+so the build can run fully offline (--frozen --offline).
+
+Starting from a clean checkout:
+
+    VERSION=0.1.1
+    git archive --prefix=squish-${VERSION}/ HEAD \
+        | tar -x -C /tmp
+    cd /tmp/squish-${VERSION}
+    cargo vendor vendor/
+    cd /tmp
+    tar -czf squish_${VERSION}.orig.tar.gz squish-${VERSION}/
+
+The resulting orig tarball contains the vendor/ directory and is suitable
+for dpkg-source.
+
+Building the source package
+---------------------------
+With the orig tarball in the parent directory:
+
+    # Source-only (for Launchpad PPA upload):
+    debuild -S -sa
+
+    # Or, using dpkg-source directly:
+    dpkg-source -b .
+
+The resulting .dsc + .debian.tar.xz + .orig.tar.gz set can be uploaded with
+dput to a Launchpad PPA.

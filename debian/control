@@ -1,0 +1,33 @@
+Source: squish
+Section: net
+Priority: optional
+Maintainer: Alex Lewontin <alex.c.lewontin@gmail.com>
+Build-Depends: debhelper-compat (= 13),
+               cargo,
+               rustc (>= 1.85),
+               cmake
+Standards-Version: 4.6.2
+Homepage: https://github.com/alexclewontin/squish
+Vcs-Git: https://github.com/alexclewontin/squish.git
+Vcs-Browser: https://github.com/alexclewontin/squish
+Rules-Requires-Root: no
+
+Package: squish
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: post-quantum SSH client suite
+ squish is a post-quantum SSH client suite implementing the SQSH protocol.
+ .
+ This package provides: sqsh (interactive client), sqsh-keygen (key
+ generation), sqsh-bootstrap (trust bootstrapping), sqcp (secure copy),
+ and sqftp (secure file transfer).
+
+Package: squishd
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Recommends: openssh-sftp-server
+Description: post-quantum SSH server daemon
+ squishd is the SQSH protocol server daemon, implementing post-quantum
+ authenticated encrypted sessions.
+ .
+ Configuration is stored in /etc/sqsh/sqshd.toml.

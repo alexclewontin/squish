@@ -1,0 +1,37 @@
+#!/usr/bin/make -f
+
+export DH_VERBOSE = 1
+export CARGO_HOME = $(CURDIR)/debian/cargo_home
+
+%:
+	dh $@ --with systemd
+
+override_dh_auto_configure:
+	@if [ ! -d vendor ]; then \
+		echo "ERROR: vendor/ directory is missing."; \
+		echo "See debian/README.source for how to produce the orig tarball with"; \
+		echo "vendored Cargo dependencies included."; \
+		exit 1; \
+	fi
+	mkdir -p debian/cargo_home
+	printf '[source.crates-io]\nreplace-with = "vendored-sources"\n\n[source.vendored-sources]\ndirectory = "%s/vendor"\n' "$(CURDIR)" \
+		> debian/cargo_home/config.toml
+
+override_dh_auto_build:
+	cargo build --release --frozen --offline
+
+override_dh_auto_test:
+	: # skip; runtime tests not suitable for package build
+
+override_dh_auto_install:
+	install -D -m 0755 target/release/sqsh            debian/squish/usr/bin/sqsh
+	install -D -m 0755 target/release/sqsh-keygen     debian/squish/usr/bin/sqsh-keygen
+	install -D -m 0755 target/release/sqsh-bootstrap  debian/squish/usr/bin/sqsh-bootstrap
+	install -D -m 0755 target/release/sqcp             debian/squish/usr/bin/sqcp
+	install -D -m 0755 target/release/sqftp            debian/squish/usr/bin/sqftp
+	install -D -m 0755 target/release/sqshd            debian/squishd/usr/bin/sqshd
+	install -D -m 0644 packaging/debian/sqshd.toml     debian/squishd/etc/sqsh/sqshd.toml
+
+override_dh_clean:
+	dh_clean
+	rm -rf target debian/cargo_home
