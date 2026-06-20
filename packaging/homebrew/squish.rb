@@ -1,11 +1,11 @@
 class Squish < Formula
-  desc "Post-quantum SSH over QUIC (ML-DSA-65 auth, ML-KEM key exchange)"
+  desc "SSH over QUIC"
   homepage "https://github.com/alexclewontin/squish"
   license "GPL-3.0-only"
 
-  # Fill in url + sha256 at release time:
-  #   url "https://github.com/alexclewontin/squish/archive/refs/tags/v0.1.0.tar.gz"
-  #   sha256 "..."
+  # Release workflow replaces these placeholder lines in the tap PR.
+  # url "__RELEASE_URL__"
+  # sha256 "__RELEASE_SHA256__"
   head "https://github.com/alexclewontin/squish.git", branch: "main"
 
   depends_on "cmake" => :build  # required by aws-lc-rs (TLS crypto)

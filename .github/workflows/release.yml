@@ -16,16 +16,12 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            deb: true
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
-            deb: true
           - os: macos-latest
             target: aarch64-apple-darwin
-            deb: false
           - os: macos-13
             target: x86_64-apple-darwin
-            deb: false
 
     runs-on: ${{ matrix.os }}
 
@@ -46,7 +42,13 @@ jobs:
       - name: Archive binaries
         run: |
           tar czf squish-${{ matrix.target }}.tar.gz \
-            -C target/release qssh qsshd qssh-bootstrap
+            -C target/release \
+            sqsh \
+            sqshd \
+            sqsh-keygen \
+            sqsh-bootstrap \
+            sqcp \
+            sqftp
 
       - name: Upload binary archive
         uses: actions/upload-artifact@v7
@@ -54,19 +56,6 @@ jobs:
           name: squish-${{ matrix.target }}
           path: squish-${{ matrix.target }}.tar.gz
 
-      - name: Build .deb packages
-        if: matrix.deb
-        run: |
-          cargo install cargo-deb --locked
-          cargo deb -p qssh
-          cargo deb -p qsshd
-
-      - name: Upload .deb packages
-        if: matrix.deb
-        uses: actions/upload-artifact@v7
-        with:
-          name: debs-${{ matrix.target }}
-          path: target/debian/*.deb
 
   release:
     needs: build
@@ -74,6 +63,8 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v6
+
       - uses: actions/download-artifact@v8
         with:
           path: artifacts
@@ -111,7 +102,71 @@ jobs:
             -t "squish release checksums"
 
           rm -f minisign.key
+
       - uses: softprops/action-gh-release@v3
         with:
           files: artifacts/**
           generate_release_notes: true
+
+      - name: Check Homebrew tap token
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [[ -z "${HOMEBREW_TAP_TOKEN}" ]]; then
+            echo "HOMEBREW_TAP_TOKEN secret is required to open PRs in alexclewontin/homebrew-tap" >&2
+            exit 1
+          fi
+
+      # HOMEBREW_TAP_TOKEN should be a fine-grained PAT with contents:write and
+      # pull-requests:write on alexclewontin/homebrew-tap so this workflow can
+      # open or update the release PR.
+      - name: Check out Homebrew tap
+        uses: actions/checkout@v6
+        with:
+          repository: alexclewontin/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-tap
+
+      - name: Update Homebrew formula
+        env:
+          SOURCE_TARBALL_URL: https://github.com/alexclewontin/squish/archive/refs/tags/${{ github.ref_name }}.tar.gz
+        run: |
+          curl --fail --location --silent --show-error \
+            --output squish-source.tar.gz \
+            "${SOURCE_TARBALL_URL}"
+          SOURCE_TARBALL_SHA256="$(sha256sum squish-source.tar.gz | cut -d' ' -f1)"
+          cp packaging/homebrew/squish.rb homebrew-tap/Formula/squish.rb
+          export SOURCE_TARBALL_URL SOURCE_TARBALL_SHA256
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          formula = Path("homebrew-tap/Formula/squish.rb")
+          placeholder = '  # url "__RELEASE_URL__"\n  # sha256 "__RELEASE_SHA256__"\n'
+          replacement = (
+              f'  url "{os.environ["SOURCE_TARBALL_URL"]}"\n'
+              f'  sha256 "{os.environ["SOURCE_TARBALL_SHA256"]}"\n'
+          )
+          text = formula.read_text()
+          if placeholder not in text:
+              raise SystemExit("release placeholder block not found in packaging/homebrew/squish.rb")
+          formula.write_text(text.replace(placeholder, replacement, 1))
+          PY
+          rm -f squish-source.tar.gz
+
+      - name: Open Homebrew tap PR
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-tap
+          add-paths: |
+            Formula/squish.rb
+          commit-message: "chore: update squish formula for ${{ github.ref_name }}"
+          branch: release/homebrew-squish-${{ github.ref_name }}
+          title: "chore: update squish formula for ${{ github.ref_name }}"
+          body: |
+            Automated release update for `${{ github.ref_name }}` from `${{ github.repository }}`.
+
+            - syncs `Formula/squish.rb` from this repo
+            - pins the GitHub source tarball URL and SHA256 for Homebrew
+          base: main
